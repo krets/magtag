@@ -1,6 +1,8 @@
 import time
 from adafruit_magtag.magtag import MagTag
 import displayio
+from adafruit_display_text import label
+import terminalio
 
 magtag = MagTag()
 
@@ -8,96 +10,98 @@ magtag = MagTag()
 color_bitmap = displayio.Bitmap(magtag.graphics.display.width, magtag.graphics.display.height, 1)
 color_palette = displayio.Palette(1)
 color_palette[0] = 0xFFFFFF
-bg_sprite = displayio.TileGrid(color_bitmap, pixel_shader=color_palette)
-magtag.splash.append(bg_sprite)
 
-# Test specific character ranges
-character_sets = [
-    (32, 47, "Symbols & Numbers"),  # Space ! " # $ % & ' ( ) * + , - . /
-    (48, 57, "Numbers"),  # 0-9
-    (58, 64, "More Symbols"),  # : ; < = > ? @
-    (65, 90, "Uppercase Letters"),  # A-Z
-    (91, 96, "Brackets & Symbols"),  # [ \ ] ^ _ `
-    (97, 122, "Lowercase Letters"),  # a-z
-    (123, 126, "Final Symbols")  # { | } ~
-]
+# ASCII range for printable characters
+START_ASCII = 32  # Space
+END_ASCII = 126  # ~
+CHARS_PER_LINE = 23
+LINES_PER_PAGE = 6
+CHARS_PER_PAGE = CHARS_PER_LINE * LINES_PER_PAGE
+
+total_chars = END_ASCII - START_ASCII + 1
+total_pages = (total_chars + CHARS_PER_PAGE - 1) // CHARS_PER_PAGE  # Ceiling division
 
 current_page = 0
 
 
-def display_character_set(start_ascii, end_ascii, title):
-    # Clear existing text properly
+def display_character_page():
+    # Clear the splash group completely
+    for _ in range(len(magtag.splash)):
+        magtag.splash.pop()
+
+    # Add background
     bg_sprite = displayio.TileGrid(color_bitmap, pixel_shader=color_palette)
     magtag.splash.append(bg_sprite)
 
-    # Add title with page info
-    page_info = f"{title} ({current_page + 1}/{len(character_sets)})"
-    magtag.add_text(
-        text=page_info,
-        text_position=(10, 15),
-        text_scale=1,
-        text_color=0x000000
+    # Calculate which characters to show on this page
+    start_char_index = current_page * CHARS_PER_PAGE
+    end_char_index = min(start_char_index + CHARS_PER_PAGE, total_chars)
+
+    # Title with page info
+    title_text = f"ASCII Characters ({current_page + 1}/{total_pages})"
+    title_label = label.Label(
+        terminalio.FONT,
+        text=title_text,
+        color=0x000000,
+        x=10,
+        y=15
     )
+    magtag.splash.append(title_label)
 
-    # Display characters with smaller scale to prevent overlap
-    chars_text = ""
-    ascii_text = ""
+    # Build lines of characters
+    lines = []
+    current_line = []
 
-    for ascii_val in range(start_ascii, end_ascii + 1):
-        char = chr(ascii_val)
-        # Handle space character visibility
-        if char == ' ':
-            chars_text += "SP "  # Show "SP" for space
-        else:
-            chars_text += char + "  "
-        ascii_text += f"{ascii_val:3d} "
+    for i in range(start_char_index, end_char_index):
+        ascii_val = START_ASCII + i
+        current_line.append(chr(ascii_val))
 
-        # Line break every 8 characters for better readability
-        if (ascii_val - start_ascii + 1) % 8 == 0:
-            chars_text += "\n"
-            ascii_text += "\n"
+        if len(current_line) >= CHARS_PER_LINE:
+            lines.append(' '.join(current_line))
+            current_line = []
 
-    # Use smaller scale for character display to prevent overlap
-    magtag.add_text(
-        text=chars_text.strip(),
-        text_position=(10, 40),
-        text_scale=1,  # Reduced from 2 to 1
-        text_color=0x000000
+    # Add any remaining characters
+    if current_line:
+        lines.append(' '.join(current_line))
+
+    # Create character display label
+    chars_label = label.Label(
+        terminalio.FONT,
+        text="\n".join(lines),
+        color=0x000000,
+        x=10,
+        y=40
     )
+    magtag.splash.append(chars_label)
 
-    magtag.add_text(
-        text=ascii_text.strip(),
-        text_position=(10, 90),
-        text_scale=1,
-        text_color=0x666666
+    # Create button instructions label
+    instructions_label = label.Label(
+        terminalio.FONT,
+        text="C: Prev      D: Next",
+        color=0x555555,
+        x=145,
+        y=120
     )
-
-    # Add button instructions at bottom
-    magtag.add_text(
-        text="C: Prev  D: Next",
-        text_position=(10, 150),
-        text_scale=1,
-        text_color=0x888888
-    )
+    magtag.splash.append(instructions_label)
 
 
 def next_page():
     global current_page
-    current_page = (current_page + 1) % len(character_sets)
+    current_page = (current_page + 1) % total_pages
     update_display()
 
 
 def prev_page():
     global current_page
-    current_page = (current_page - 1) % len(character_sets)
+    current_page = (current_page - 1) % total_pages
     update_display()
 
 
 def update_display():
-    start_ascii, end_ascii, title = character_sets[current_page]
-    display_character_set(start_ascii, end_ascii, title)
-    print(f"Displaying: {title} (Page {current_page + 1}/{len(character_sets)})")
-    # Single refresh call at the end
+    display_character_page()
+    print(f"Displaying page {current_page + 1}/{total_pages}")
+    print(
+        f"Characters {START_ASCII + current_page * CHARS_PER_PAGE} to {min(START_ASCII + (current_page + 1) * CHARS_PER_PAGE - 1, END_ASCII)}")
     magtag.refresh()
 
 
@@ -112,7 +116,6 @@ while True:
     if not magtag.peripherals.buttons[3].value and not button_pressed[3]:
         button_pressed[3] = True
         next_page()
-
     elif magtag.peripherals.buttons[3].value and button_pressed[3]:
         button_pressed[3] = False
 
@@ -120,8 +123,7 @@ while True:
     if not magtag.peripherals.buttons[2].value and not button_pressed[2]:
         button_pressed[2] = True
         prev_page()
-
     elif magtag.peripherals.buttons[2].value and button_pressed[2]:
         button_pressed[2] = False
 
-    time.sleep(0.1)  # Small delay to prevent excessive CPU usage
+    time.sleep(0.1)
