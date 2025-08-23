@@ -1,3 +1,4 @@
+from adafruit_datetime import datetime
 import ssl
 import wifi
 import socketpool
@@ -71,14 +72,44 @@ def get_weather_data():
 
 
 def format_updated_time(iso_time):
-    """Format ISO time to readable format"""
+    """Format ISO time to local timezone HH:MM format"""
     try:
-        # Extract date and time parts (simplified parsing)
-        date_part = iso_time[:10]  # YYYY-MM-DD
-        time_part = iso_time[11:16]  # HH:MM
-        return f"{date_part} {time_part}Z"
-    except:
-        return iso_time
+        updated_time = datetime.fromisoformat(iso_time)
+        # Get timezone offset from secrets (in hours, e.g., -8 for PST, -7 for PDT)
+        timezone_offset = secrets.get("timezone_offset", 0)
+
+        # Apply timezone offset
+        hour = (updated_time.hour + timezone_offset) % 24
+
+        return f"{hour:02d}:{updated_time.minute:02d}"
+    except Exception as e:
+        print(f"Time formatting error: {e}")
+        return "??:??"
+
+
+def get_current_date(updated_at):
+    """Get current date formatted as day of week and month/date"""
+    try:
+        current_time = datetime.fromisoformat(updated_at)
+
+        # Days of week (starting from Monday = 0)
+        days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+        months = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+        # current_time is (year, month, date, hour, minute, second, weekday, yearday)
+        # weekday: 0 = Monday, 6 = Sunday
+        weekday = current_time.weekday()
+        month = current_time.month
+        date = current_time.day
+
+        day_name = days[weekday]
+        month_name = months[month]
+
+        return day_name, f"{month_name} {date}"
+    except Exception as e:
+        print(f"Date formatting error: {e}")
+        return "???", "??? ??"
 
 
 def wind_direction_text(degrees):
@@ -95,7 +126,7 @@ def create_weather_display(weather_data):
     for _ in range(len(magtag.splash)):
         magtag.splash.pop()
 
-    # Add white background - INSERT THIS CODE
+    # Add white background
     color_bitmap = displayio.Bitmap(DISPLAY_WIDTH, DISPLAY_HEIGHT, 1)
     color_palette = displayio.Palette(1)
     color_palette[0] = 0xFFFFFF  # White background
@@ -135,8 +166,33 @@ def create_weather_display(weather_data):
 
         # Create main group
         main_group = displayio.Group()
+
+        # Get current date
+        day_name, month_date = get_current_date(updated_time)
+
+        # Date display (left side, big text)
+        day_label = label.Label(
+            terminalio.FONT,
+            text=day_name,
+            color=0x000000,
+            scale=3,
+            x=10,
+            y=25
+        )
+        main_group.append(day_label)
+
+        date_label = label.Label(
+            terminalio.FONT,
+            text=month_date,
+            color=0x000000,
+            scale=2,
+            x=10,
+            y=50
+        )
+        main_group.append(date_label)
+
+        # Weather icon (right side)
         symbol_code_short, *_ = symbol_code.split("_")
-        # Weather icon (center top)
         try:
             icon_file = f"icons/{symbol_code_short}.bmp"
             print(f"Looking for icon: {icon_file}")
@@ -144,7 +200,7 @@ def create_weather_display(weather_data):
             icon_sprite = displayio.TileGrid(
                 icon_bitmap,
                 pixel_shader=icon_bitmap.pixel_shader,
-                x=(DISPLAY_WIDTH - ICON_SIZE) // 2,
+                x=DISPLAY_WIDTH - ICON_SIZE - 10,  # Right aligned with margin
                 y=5
             )
             main_group.append(icon_sprite)
@@ -160,24 +216,24 @@ def create_weather_display(weather_data):
                 terminalio.FONT,
                 text=symbol_code[:12],  # Truncate if too long
                 color=0x000000,
-                x=(DISPLAY_WIDTH - len(symbol_code[:12]) * 6) // 2,
+                x=DISPLAY_WIDTH - 80,
                 y=30
             )
             main_group.append(icon_text)
 
-        # Temperature (large, below icon)
+        # Temperature (right side, below icon)
         temp_text = f"{temperature:.1f}C"
         temp_label = label.Label(
             terminalio.FONT,
             text=temp_text,
             color=0x000000,
             scale=2,
-            x=(DISPLAY_WIDTH - len(temp_text) * 12) // 2,
+            x=DISPLAY_WIDTH - 80,  # Right aligned
             y=80
         )
         main_group.append(temp_label)
 
-        # Weather details (bottom section)
+        # Weather details (center section)
         details_y = 95
 
         # Precipitation
@@ -186,7 +242,7 @@ def create_weather_display(weather_data):
             terminalio.FONT,
             text=precip_text,
             color=0x000000,
-            x=5,
+            x=10,
             y=details_y
         )
         main_group.append(precip_label)
@@ -198,40 +254,41 @@ def create_weather_display(weather_data):
             terminalio.FONT,
             text=wind_text,
             color=0x000000,
-            x=5,
+            x=10,
             y=details_y + 12
         )
         main_group.append(wind_label)
 
-        # Humidity and Pressure
+        # Humidity
         humid_text = f"RH: {humidity:.0f}%"
         humid_label = label.Label(
             terminalio.FONT,
             text=humid_text,
             color=0x000000,
-            x=160,
+            x=150,
             y=details_y
         )
         main_group.append(humid_label)
 
+        # Pressure
         pressure_text = f"P: {pressure:.0f}hPa"
         pressure_label = label.Label(
             terminalio.FONT,
             text=pressure_text,
             color=0x000000,
-            x=160,
+            x=150,
             y=details_y + 12
         )
         main_group.append(pressure_label)
 
-        # Updated time (top right corner)
+        # Updated time (bottom right corner)
         updated_text = format_updated_time(updated_time)
         updated_label = label.Label(
             terminalio.FONT,
-            text=updated_text[-8:],  # Show just time part
+            text=updated_text,
             color=0x000000,
-            x=DISPLAY_WIDTH - 50,
-            y=10
+            x=DISPLAY_WIDTH - 35,
+            y=DISPLAY_HEIGHT - 8
         )
         main_group.append(updated_label)
 
@@ -277,8 +334,8 @@ def main():
 
     print("Entering deep sleep for 3 hours...")
 
-    # Deep sleep for 3 hours (10800 seconds)
-    time_alarm = alarm.time.TimeAlarm(monotonic_time=time.monotonic() + 10800)
+    # Deep sleep for 3 hours
+    time_alarm = alarm.time.TimeAlarm(monotonic_time=time.monotonic() + 3 * 60 * 60)
     alarm.exit_and_deep_sleep_until_alarms(time_alarm)
 
 
