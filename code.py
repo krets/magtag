@@ -11,6 +11,8 @@ from adafruit_display_text import label
 from adafruit_magtag.magtag import MagTag
 from adafruit_bitmap_font import bitmap_font
 import terminalio
+import analogio
+import digitalio
 
 # Get wifi details from secrets.py file
 try:
@@ -37,6 +39,16 @@ USER_AGENT = "Magtag 0.1.2/ (jesse@krets.com)"
 DISPLAY_WIDTH = 296
 DISPLAY_HEIGHT = 128
 ICON_SIZE = 64
+
+# Set up VBUS detection for USB power
+try:
+    vbus_pin = digitalio.DigitalInOut(board.VBUS_SENSE)
+    vbus_pin.direction = digitalio.Direction.INPUT
+    has_vbus = True
+    print("VBUS detection available")
+except AttributeError:
+    has_vbus = False
+    print("VBUS detection not available, using voltage method")
 
 
 def connect_wifi():
@@ -304,6 +316,17 @@ def create_weather_display(weather_data):
         y=DISPLAY_HEIGHT - 8
     )
     main_group.append(updated_label)
+
+    # Battery level
+    voltage_text = f"{magtag.peripherals.battery:.1f}V"
+    voltage_label = label.Label(
+        terminalio.FONT,
+        text=voltage_text,
+        color=0x000000,
+        x=4,
+        y=DISPLAY_HEIGHT - 8
+    )
+    main_group.append(voltage_label)
 
     magtag.splash.append(main_group)
 
