@@ -9,6 +9,7 @@ import alarm
 import board
 from adafruit_display_text import label
 from adafruit_magtag.magtag import MagTag
+from adafruit_bitmap_font import bitmap_font
 import terminalio
 
 # Get wifi details from secrets.py file
@@ -17,6 +18,13 @@ try:
 except ImportError:
     print("WiFi secrets are kept in secrets.py, please add them there!")
     raise
+
+try:
+    FONT = bitmap_font.load_font("Roboto-Regular-25.bdf")
+    print("Custom font loaded successfully")
+except Exception as e:
+    print(f"Could not load custom font: {e}")
+    FONT = terminalio.FONT  # Fallback to default
 
 # Initialize MagTag
 print("Initializing MagTag...")
@@ -93,7 +101,7 @@ def get_current_date(updated_at):
         current_time = datetime.fromisoformat(updated_at)
 
         # Days of week (starting from Monday = 0)
-        days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+        days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
         months = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
                   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
@@ -145,165 +153,159 @@ def create_weather_display(weather_data):
         magtag.splash.append(error_label)
         return
 
+    # Get first timeseries entry
+    timeseries = weather_data["properties"]["timeseries"]
+    current_data = timeseries[0]
+    instant_details = current_data["data"]["instant"]["details"]
+    forecast_6h = current_data["data"]["next_6_hours"]
+    updated_time = weather_data["properties"]["meta"]["updated_at"]
+
+    # Extract data
+    temperature = instant_details["air_temperature"]
+    symbol_code = forecast_6h["summary"]["symbol_code"]
+    precipitation = forecast_6h["details"].get("precipitation_amount", 0)
+    wind_speed = instant_details["wind_speed"]
+    wind_direction = instant_details["wind_from_direction"]
+    humidity = instant_details["relative_humidity"]
+    pressure = instant_details["air_pressure_at_sea_level"]
+
+    min_temperature = 50.0
+    max_temperature = -50.0
+    for entry in timeseries[:12]:
+        entry_temp = entry["data"]["instant"]["details"]["air_temperature"]
+        min_temperature = min(entry_temp, min_temperature)
+        max_temperature = max(entry_temp, max_temperature)
+
+    print(f"Symbol code: {symbol_code}")
+    print(f"Temperature: {temperature}°C")
+
+    # Create main group
+    main_group = displayio.Group()
+
+    # Get current date
+    day_name, month_date = get_current_date(updated_time)
+
+    # Date display (left side, big text)
+    day_label = label.Label(
+        FONT,
+        text=f"{day_name}\n{month_date}",
+        color=0x000000,
+        x=10,
+        y=25
+    )
+    main_group.append(day_label)
+
+    # Weather icon (right side)
+    symbol_code_short, *_ = symbol_code.split("_")
     try:
-        # Get first timeseries entry
-        current_data = weather_data["properties"]["timeseries"][0]
-        instant_details = current_data["data"]["instant"]["details"]
-        forecast_6h = current_data["data"]["next_6_hours"]
-        updated_time = weather_data["properties"]["meta"]["updated_at"]
-
-        # Extract data
-        temperature = instant_details["air_temperature"]
-        symbol_code = forecast_6h["summary"]["symbol_code"]
-        precipitation = forecast_6h["details"].get("precipitation_amount", 0)
-        wind_speed = instant_details["wind_speed"]
-        wind_direction = instant_details["wind_from_direction"]
-        humidity = instant_details["relative_humidity"]
-        pressure = instant_details["air_pressure_at_sea_level"]
-
-        print(f"Symbol code: {symbol_code}")
-        print(f"Temperature: {temperature}°C")
-
-        # Create main group
-        main_group = displayio.Group()
-
-        # Get current date
-        day_name, month_date = get_current_date(updated_time)
-
-        # Date display (left side, big text)
-        day_label = label.Label(
-            terminalio.FONT,
-            text=day_name,
-            color=0x000000,
-            scale=3,
-            x=10,
-            y=25
+        icon_file = f"icons/{symbol_code_short}.bmp"
+        print(f"Looking for icon: {icon_file}")
+        icon_bitmap = displayio.OnDiskBitmap(icon_file)
+        icon_sprite = displayio.TileGrid(
+            icon_bitmap,
+            pixel_shader=icon_bitmap.pixel_shader,
+            x=DISPLAY_WIDTH - ICON_SIZE - 10,  # Right aligned with margin
+            y=5
         )
-        main_group.append(day_label)
+        main_group.append(icon_sprite)
+        icon_loaded = True
+        print("Icon loaded successfully")
+    except Exception as icon_error:
+        print(f"Could not load icon: {symbol_code}, error: {icon_error}")
+        icon_loaded = False
 
-        date_label = label.Label(
+    # If icon didn't load, show symbol code as text
+    if not icon_loaded:
+        icon_text = label.Label(
             terminalio.FONT,
-            text=month_date,
+            text=symbol_code[:12],  # Truncate if too long
             color=0x000000,
-            scale=2,
-            x=10,
-            y=50
+            x=DISPLAY_WIDTH - 80,
+            y=30
         )
-        main_group.append(date_label)
+        main_group.append(icon_text)
 
-        # Weather icon (right side)
-        symbol_code_short, *_ = symbol_code.split("_")
-        try:
-            icon_file = f"icons/{symbol_code_short}.bmp"
-            print(f"Looking for icon: {icon_file}")
-            icon_bitmap = displayio.OnDiskBitmap(icon_file)
-            icon_sprite = displayio.TileGrid(
-                icon_bitmap,
-                pixel_shader=icon_bitmap.pixel_shader,
-                x=DISPLAY_WIDTH - ICON_SIZE - 10,  # Right aligned with margin
-                y=5
-            )
-            main_group.append(icon_sprite)
-            icon_loaded = True
-            print("Icon loaded successfully")
-        except Exception as icon_error:
-            print(f"Could not load icon: {symbol_code}, error: {icon_error}")
-            icon_loaded = False
+    # Temperature (right side, below icon)
+    temp_text = f"{temperature:.1f}°"
+    temp_label = label.Label(
+        FONT,
+        text=temp_text,
+        color=0x000000,
+        x=DISPLAY_WIDTH - 80,  # Right aligned
+        y=80
+    )
+    main_group.append(temp_label)
 
-        # If icon didn't load, show symbol code as text
-        if not icon_loaded:
-            icon_text = label.Label(
-                terminalio.FONT,
-                text=symbol_code[:12],  # Truncate if too long
-                color=0x000000,
-                x=DISPLAY_WIDTH - 80,
-                y=30
-            )
-            main_group.append(icon_text)
+    # Weather details (center section)
+    details_y = 95
+    hi_lo_text = f"{min_temperature:.1f} | {max_temperature}"
+    hi_lo_label = label.Label(
+        terminalio.FONT,
+        text=hi_lo_text,
+        color=0x000000,
+        x=DISPLAY_WIDTH - 80,
+        y=98
+    )
+    main_group.append(hi_lo_label)
 
-        # Temperature (right side, below icon)
-        temp_text = f"{temperature:.1f}C"
-        temp_label = label.Label(
-            terminalio.FONT,
-            text=temp_text,
-            color=0x000000,
-            scale=2,
-            x=DISPLAY_WIDTH - 80,  # Right aligned
-            y=80
-        )
-        main_group.append(temp_label)
 
-        # Weather details (center section)
-        details_y = 95
+    # Precipitation
+    precip_text = f"Rain: {precipitation}mm"
+    precip_label = label.Label(
+        terminalio.FONT,
+        text=precip_text,
+        color=0x000000,
+        x=10,
+        y=details_y
+    )
+    main_group.append(precip_label)
 
-        # Precipitation
-        precip_text = f"Rain: {precipitation}mm"
-        precip_label = label.Label(
-            terminalio.FONT,
-            text=precip_text,
-            color=0x000000,
-            x=10,
-            y=details_y
-        )
-        main_group.append(precip_label)
+    # Wind
+    wind_dir = wind_direction_text(wind_direction)
+    wind_text = f"Wind: {wind_speed}m/s {wind_dir}"
+    wind_label = label.Label(
+        terminalio.FONT,
+        text=wind_text,
+        color=0x000000,
+        x=10,
+        y=details_y + 12
+    )
+    main_group.append(wind_label)
 
-        # Wind
-        wind_dir = wind_direction_text(wind_direction)
-        wind_text = f"Wind: {wind_speed}m/s {wind_dir}"
-        wind_label = label.Label(
-            terminalio.FONT,
-            text=wind_text,
-            color=0x000000,
-            x=10,
-            y=details_y + 12
-        )
-        main_group.append(wind_label)
+    # Humidity
+    humid_text = f"RH: {humidity:.0f}%"
+    humid_label = label.Label(
+        terminalio.FONT,
+        text=humid_text,
+        color=0x000000,
+        x=130,
+        y=details_y
+    )
+    main_group.append(humid_label)
 
-        # Humidity
-        humid_text = f"RH: {humidity:.0f}%"
-        humid_label = label.Label(
-            terminalio.FONT,
-            text=humid_text,
-            color=0x000000,
-            x=150,
-            y=details_y
-        )
-        main_group.append(humid_label)
+    # Pressure
+    pressure_text = f"P: {pressure:.0f}hPa"
+    pressure_label = label.Label(
+        terminalio.FONT,
+        text=pressure_text,
+        color=0x000000,
+        x=130,
+        y=details_y + 12
+    )
+    main_group.append(pressure_label)
 
-        # Pressure
-        pressure_text = f"P: {pressure:.0f}hPa"
-        pressure_label = label.Label(
-            terminalio.FONT,
-            text=pressure_text,
-            color=0x000000,
-            x=150,
-            y=details_y + 12
-        )
-        main_group.append(pressure_label)
+    # Updated time (bottom right corner)
+    updated_text = format_updated_time(updated_time)
+    updated_label = label.Label(
+        terminalio.FONT,
+        text=updated_text,
+        color=0x000000,
+        x=DISPLAY_WIDTH - 35,
+        y=DISPLAY_HEIGHT - 8
+    )
+    main_group.append(updated_label)
 
-        # Updated time (bottom right corner)
-        updated_text = format_updated_time(updated_time)
-        updated_label = label.Label(
-            terminalio.FONT,
-            text=updated_text,
-            color=0x000000,
-            x=DISPLAY_WIDTH - 35,
-            y=DISPLAY_HEIGHT - 8
-        )
-        main_group.append(updated_label)
-
-        magtag.splash.append(main_group)
-
-    except Exception as e:
-        print(f"Display creation error: {e}")
-        error_label = label.Label(
-            terminalio.FONT,
-            text="Display error",
-            color=0x000000,
-            x=DISPLAY_WIDTH // 2 - 40,
-            y=DISPLAY_HEIGHT // 2
-        )
-        magtag.splash.append(error_label)
+    magtag.splash.append(main_group)
 
 
 def main():
@@ -326,7 +328,18 @@ def main():
     else:
         # Get and display weather data
         weather_data = get_weather_data()
-        create_weather_display(weather_data)
+        try:
+            create_weather_display(weather_data)
+        except Exception as error:
+            print(f"Display creation error: {error}")
+            error_label = label.Label(
+                terminalio.FONT,
+                text=f"Display error:\n{error}",
+                color=0x000000,
+                x=DISPLAY_WIDTH // 2 - 40,
+                y=DISPLAY_HEIGHT // 2
+            )
+            magtag.splash.append(error_label)
         magtag.refresh()
 
         # Disconnect WiFi to save power
