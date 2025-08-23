@@ -51,6 +51,38 @@ except AttributeError:
     print("VBUS detection not available, using voltage method")
 
 
+def get_battery_icon_name(voltage):
+    """Determine which battery icon to use based on voltage level"""
+    try:
+        # Check if charging (USB connected)
+        if has_vbus and vbus_pin.value:
+            value = "charging_full"
+            # if voltage >= 4.1:
+            # maybe find charging icons at different levels
+
+        else:
+            # Voltage range should be 3.1 to 4.1
+            # Check if battery is full first
+            if voltage >= 4.1:
+                value = "full"
+            else:
+                increments = 6
+                # Start with empty battery
+                value = "0_bar"
+
+                for i in range(increments):  # Changed to just increments, not +1
+                    threshold = 3.1 + (1.0 / increments) * (i + 1)
+                    if voltage >= threshold:
+                        value = f"{i + 1}_bar"
+                    else:
+                        break
+
+    except Exception as e:
+        print(f"Error determining battery icon: {e}")
+        value = "alert"
+    return "battery_%s_90deg.bmp" % value
+
+
 def connect_wifi():
     """Connect to WiFi network"""
     try:
@@ -169,7 +201,7 @@ def create_weather_display(weather_data):
     timeseries = weather_data["properties"]["timeseries"]
     current_data = timeseries[0]
     instant_details = current_data["data"]["instant"]["details"]
-    forecast_6h = current_data["data"]["next_6_hours"]
+    forecast_6h = current_data["data"]["next_12_hours"]
     updated_time = weather_data["properties"]["meta"]["updated_at"]
 
     # Extract data
@@ -260,7 +292,6 @@ def create_weather_display(weather_data):
     )
     main_group.append(hi_lo_label)
 
-
     # Precipitation
     precip_text = f"Rain: {precipitation}mm"
     precip_label = label.Label(
@@ -307,26 +338,43 @@ def create_weather_display(weather_data):
     main_group.append(pressure_label)
 
     # Updated time (bottom right corner)
-    updated_text = format_updated_time(updated_time)
+    updated_text = f"updated: {format_updated_time(updated_time)}"
     updated_label = label.Label(
         terminalio.FONT,
         text=updated_text,
-        color=0x000000,
-        x=DISPLAY_WIDTH - 35,
+        color=0x404040,
+        x=DISPLAY_WIDTH - 90,
         y=DISPLAY_HEIGHT - 8
     )
     main_group.append(updated_label)
 
-    # Battery level
-    voltage_text = f"{magtag.peripherals.battery:.1f}V"
-    voltage_label = label.Label(
-        terminalio.FONT,
-        text=voltage_text,
-        color=0x000000,
-        x=4,
-        y=DISPLAY_HEIGHT - 8
-    )
-    main_group.append(voltage_label)
+    # Battery icon (bottom left corner)
+    battery_voltage = magtag.peripherals.battery
+    battery_icon_name = get_battery_icon_name(battery_voltage)
+    try:
+        battery_icon_file = f"icons/{battery_icon_name}"
+        print(f"Loading battery icon: {battery_icon_file} (voltage: {battery_voltage:.1f}V)")
+        battery_bitmap = displayio.OnDiskBitmap(battery_icon_file)
+        battery_sprite = displayio.TileGrid(
+            battery_bitmap,
+            pixel_shader=battery_bitmap.pixel_shader,
+            x=2,
+            y=DISPLAY_HEIGHT - 14
+        )
+        main_group.insert(1, battery_sprite)
+        print("Battery icon loaded successfully")
+    except Exception as battery_error:
+        print(f"Could not load battery icon: {battery_error}")
+        # Fallback to voltage text if icon fails
+        voltage_text = f"{battery_voltage:.1f}V"
+        voltage_label = label.Label(
+            terminalio.FONT,
+            text=voltage_text,
+            color=0x000000,
+            x=2,
+            y=DISPLAY_HEIGHT - 8
+        )
+        main_group.append(voltage_label)
 
     magtag.splash.append(main_group)
 
