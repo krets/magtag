@@ -57,25 +57,25 @@ def get_battery_icon_name(voltage):
         # Check if charging (USB connected)
         if has_vbus and vbus_pin.value:
             value = "charging_full"
-            # if voltage >= 4.1:
-            # maybe find charging icons at different levels
-
         else:
-            # Voltage range should be 3.1 to 4.1
-            # Check if battery is full first
-            if voltage >= 4.1:
-                value = "full"
+            # Custom thresholds based on typical Li-ion discharge curve
+            # 3.1V = empty, 4.1V = full
+            if voltage >= 4.05:
+                value = "6_bar"  # 100%
+            elif voltage >= 3.95:
+                value = "5_bar"  # ~80%
+            elif voltage >= 3.80:
+                value = "4_bar"  # ~60%
+            elif voltage >= 3.70:
+                value = "3_bar"  # ~40%
+            elif voltage >= 3.55:
+                value = "2_bar"  # ~20%
+            elif voltage >= 3.40:
+                value = "1_bar"  # ~10%
+            elif voltage >= 3.1:
+                value = "0_bar"  # Critical but not dead
             else:
-                increments = 6
-                # Start with empty battery
-                value = "0_bar"
-
-                for i in range(increments):  # Changed to just increments, not +1
-                    threshold = 3.1 + (1.0 / increments) * (i + 1)
-                    if voltage >= threshold:
-                        value = f"{i + 1}_bar"
-                    else:
-                        break
+                value = "alert"  # Below 3.1V - dead battery
 
     except Exception as e:
         print(f"Error determining battery icon: {e}")
