@@ -240,7 +240,11 @@ def create_weather_display(weather_data):
     main_group.append(day_label)
 
     # Weather icon (right side)
-    symbol_code_short, *_ = symbol_code.split("_")
+    parts = symbol_code.split("_")
+    symbol_code_short = parts[0]
+    suffix = parts[1] if len(parts) > 1 else ''
+    if suffix and suffix != "day":
+        symbol_code_short = symbol_code
     try:
         icon_file = f"icons/{symbol_code_short}.bmp"
         print(f"Looking for icon: {icon_file}")
@@ -407,8 +411,8 @@ def main():
                 terminalio.FONT,
                 text=f"Display error:\n{error}",
                 color=0x000000,
-                x=DISPLAY_WIDTH // 2 - 40,
-                y=DISPLAY_HEIGHT // 2
+                x=4,
+                y=4
             )
             magtag.splash.append(error_label)
         magtag.refresh()
