@@ -40,6 +40,11 @@ DISPLAY_WIDTH = 296
 DISPLAY_HEIGHT = 128
 ICON_SIZE = 64
 
+WHITE = 0xFFFFFF
+BLACK = 0x000000
+GREY = int(WHITE*.75)
+LIGHT_GREY = int(GREY*0.25)
+
 # Set up VBUS detection for USB power
 try:
     vbus_pin = digitalio.DigitalInOut(board.VBUS_SENSE)
@@ -60,17 +65,17 @@ def get_battery_icon_name(voltage):
         else:
             # Custom thresholds based on typical Li-ion discharge curve
             # 3.1V = empty, 4.1V = full
-            if voltage >= 4.05:
+            if voltage >= 4.10:
                 value = "6_bar"  # 100%
-            elif voltage >= 3.95:
+            elif voltage >= 4.08:
                 value = "5_bar"  # ~80%
-            elif voltage >= 3.80:
+            elif voltage >= 3.95:
                 value = "4_bar"  # ~60%
-            elif voltage >= 3.70:
+            elif voltage >= 3.85:
                 value = "3_bar"  # ~40%
-            elif voltage >= 3.55:
+            elif voltage >= 3.80:
                 value = "2_bar"  # ~20%
-            elif voltage >= 3.40:
+            elif voltage >= 3.71:
                 value = "1_bar"  # ~10%
             elif voltage >= 3.1:
                 value = "0_bar"  # Critical but not dead
@@ -190,7 +195,7 @@ def create_weather_display(weather_data):
         error_label = label.Label(
             terminalio.FONT,
             text="Weather data\nunavailable",
-            color=0x000000,
+            color=BLACK,
             x=DISPLAY_WIDTH // 2 - 60,
             y=DISPLAY_HEIGHT // 2
         )
@@ -233,7 +238,7 @@ def create_weather_display(weather_data):
     day_label = label.Label(
         FONT,
         text=f"{day_name}\n{month_date}",
-        color=0x000000,
+        color=BLACK,
         x=10,
         y=25
     )
@@ -267,7 +272,7 @@ def create_weather_display(weather_data):
         icon_text = label.Label(
             terminalio.FONT,
             text=symbol_code[:12],  # Truncate if too long
-            color=0x000000,
+            color=BLACK,
             x=DISPLAY_WIDTH - 80,
             y=30
         )
@@ -278,7 +283,7 @@ def create_weather_display(weather_data):
     temp_label = label.Label(
         FONT,
         text=temp_text,
-        color=0x000000,
+        color=BLACK,
         x=DISPLAY_WIDTH - 80,  # Right aligned
         y=80
     )
@@ -290,7 +295,7 @@ def create_weather_display(weather_data):
     hi_lo_label = label.Label(
         terminalio.FONT,
         text=hi_lo_text,
-        color=0x000000,
+        color=BLACK,
         x=DISPLAY_WIDTH - 80,
         y=98
     )
@@ -301,7 +306,7 @@ def create_weather_display(weather_data):
     precip_label = label.Label(
         terminalio.FONT,
         text=precip_text,
-        color=0x000000,
+        color=BLACK,
         x=10,
         y=details_y
     )
@@ -313,7 +318,7 @@ def create_weather_display(weather_data):
     wind_label = label.Label(
         terminalio.FONT,
         text=wind_text,
-        color=0x000000,
+        color=BLACK,
         x=10,
         y=details_y + 12
     )
@@ -324,7 +329,7 @@ def create_weather_display(weather_data):
     humid_label = label.Label(
         terminalio.FONT,
         text=humid_text,
-        color=0x000000,
+        color=BLACK,
         x=130,
         y=details_y
     )
@@ -335,7 +340,7 @@ def create_weather_display(weather_data):
     pressure_label = label.Label(
         terminalio.FONT,
         text=pressure_text,
-        color=0x000000,
+        color=BLACK,
         x=130,
         y=details_y + 12
     )
@@ -346,7 +351,7 @@ def create_weather_display(weather_data):
     updated_label = label.Label(
         terminalio.FONT,
         text=updated_text,
-        color=0x404040,
+        color=LIGHT_GREY,
         x=DISPLAY_WIDTH - 90,
         y=DISPLAY_HEIGHT - 8
     )
@@ -369,16 +374,16 @@ def create_weather_display(weather_data):
         print("Battery icon loaded successfully")
     except Exception as battery_error:
         print(f"Could not load battery icon: {battery_error}")
-        # Fallback to voltage text if icon fails
-        voltage_text = f"{battery_voltage:.1f}V"
-        voltage_label = label.Label(
-            terminalio.FONT,
-            text=voltage_text,
-            color=0x000000,
-            x=2,
-            y=DISPLAY_HEIGHT - 8
-        )
-        main_group.append(voltage_label)
+
+    voltage_text = f"{battery_voltage:.1f}V"
+    voltage_label = label.Label(
+        terminalio.FONT,
+        text=voltage_text,
+        color=LIGHT_GREY,
+        x=22,
+        y=DISPLAY_HEIGHT - 8
+    )
+    main_group.append(voltage_label)
 
     magtag.splash.append(main_group)
 
@@ -393,7 +398,7 @@ def main():
         error_label = label.Label(
             terminalio.FONT,
             text="WiFi connection failed",
-            color=0x000000,
+            color=BLACK,
             x=50,
             y=DISPLAY_HEIGHT // 2
         )
@@ -410,7 +415,7 @@ def main():
             error_label = label.Label(
                 terminalio.FONT,
                 text=f"Display error:\n{error}",
-                color=0x000000,
+                color=BLACK,
                 x=4,
                 y=4
             )
