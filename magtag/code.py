@@ -23,10 +23,11 @@ except ImportError:
 
 try:
     FONT = bitmap_font.load_font("Roboto-Regular-25.bdf")
+    BIG_FONT = bitmap_font.load_font("Roboto-Regular-50.bdf")
     print("Custom font loaded successfully")
 except Exception as e:
     print(f"Could not load custom font: {e}")
-    FONT = terminalio.FONT  # Fallback to default
+    BIG_FONT = FONT = terminalio.FONT  # Fallback to default
 
 # Initialize MagTag
 print("Initializing MagTag...")
@@ -38,14 +39,13 @@ USER_AGENT = "Magtag 0.1.2/ (jesse@krets.com)"
 # Display constants
 DISPLAY_WIDTH = 296
 DISPLAY_HEIGHT = 128
-ICON_SIZE = 64
 
 WHITE = 0xFFFFFF
 BLACK = 0x000000
 GREY = 0x404040
 LIGHT_GREY = 0xB0B0B0
 
-# Set up VBUS detection for USB power
+# Set up VBUS detection for USB power # This does not work yet.
 try:
     vbus_pin = digitalio.DigitalInOut(board.VBUS_SENSE)
     vbus_pin.direction = digitalio.Direction.INPUT
@@ -56,6 +56,72 @@ except AttributeError:
     print("VBUS detection not available, using voltage method")
 
 
+WEATHER_ICON_NAMES = {
+    "clearsky_day": "clear",
+    "clearsky_night": "nt_clear",
+    "cloudy": "cloudy",
+    "fair_day": "partlysunny",
+    "fair_night": "nt_partlysunny",
+    "fog": "fog",
+    "heavyrain": "rain",
+    "heavyrainandthunder": "tstorms",
+    "heavyrainshowers_day": "chancerain",
+    "heavyrainshowers_night": "nt_chancerain",
+    "heavyrainshowersandthunder_day": "chancetstorms",
+    "heavyrainshowersandthunder_night": "nt_chancetstorms",
+    "heavysleet": "sleet",
+    "heavysleetandthunder": "tstorms",
+    "heavysleetshowers_day": "chancesleet",
+    "heavysleetshowers_night": "nt_chancesleet",
+    "heavysleetshowersandthunder_day": "chancetstorms",
+    "heavysleetshowersandthunder_night": "nt_chancetstorms",
+    "heavysnow": "snow",
+    "heavysnowandthunder": "tstorms",
+    "heavysnowshowers_day": "chancesnow",
+    "heavysnowshowers_night": "nt_chancesnow",
+    "heavysnowshowersandthunder_day": "chancetstorms",
+    "heavysnowshowersandthunder_night": "nt_chancetstorms",
+    "lightrain": "rain",
+    "lightrainandthunder": "tstorms",
+    "lightrainshowers_day": "chancerain",
+    "lightrainshowers_night": "nt_chancerain",
+    "lightrainshowersandthunder_day": "chancetstorms",
+    "lightrainshowersandthunder_night": "nt_chancetstorms",
+    "lightsleet": "sleet",
+    "lightsleetandthunder": "tstorms",
+    "lightsleetshowers_day": "chancesleet",
+    "lightsleetshowers_night": "nt_chancesleet",
+    "lightsnow": "snow",
+    "lightsnowandthunder": "tstorms",
+    "lightsnowshowers_day": "chancesnow",
+    "lightsnowshowers_night": "nt_chancesnow",
+    "lightssleetshowersandthunder_day": "chancetstorms",
+    "lightssleetshowersandthunder_night": "nt_chancetstorms",
+    "lightssnowshowersandthunder_day": "chancetstorms",
+    "lightssnowshowersandthunder_night": "nt_chancetstorms",
+    "partlycloudy_day": "partlycloudy",
+    "partlycloudy_night": "nt_partlycloudy",
+    "rain": "rain",
+    "rainandthunder": "tstorms",
+    "rainshowers_day": "chancerain",
+    "rainshowers_night": "nt_chancerain",
+    "rainshowersandthunder_day": "chancetstorms",
+    "rainshowersandthunder_night": "nt_chancetstorms",
+    "sleet": "sleet",
+    "sleetandthunder": "tstorms",
+    "sleetshowers_day": "chancesleet",
+    "sleetshowers_night": "nt_chancesleet",
+    "sleetshowersandthunder_day": "chancetstorms",
+    "sleetshowersandthunder_night": "nt_chancetstorms",
+    "snow": "snow",
+    "snowandthunder": "tstorms",
+    "snowshowers_day": "chancesnow",
+    "snowshowers_night": "nt_chancesnow",
+    "snowshowersandthunder_day": "chancetstorms",
+    "snowshowersandthunder_night": "nt_chancetstorms",
+}
+
+
 def get_battery_icon_name(voltage):
     """Determine which battery icon to use based on voltage level"""
     try:
@@ -64,23 +130,26 @@ def get_battery_icon_name(voltage):
             value = "charging_full"
         else:
             # Custom thresholds based on typical Li-ion discharge curve
-            # 3.1V = empty, 4.1V = full
-            if voltage >= 4.10:
-                value = "6_bar"  # 100%
-            elif voltage >= 4.08:
-                value = "5_bar"  # ~80%
+            # 3.30V = empty, 4.20V = full
+
+            if voltage >= 4.15:
+                value = "full"  # ~95–100%
+            elif voltage >= 4.05:
+                value = "6_bar"  # ~85–95%
             elif voltage >= 3.95:
-                value = "4_bar"  # ~60%
-            elif voltage >= 3.85:
-                value = "3_bar"  # ~40%
-            elif voltage >= 3.80:
-                value = "2_bar"  # ~20%
-            elif voltage >= 3.71:
-                value = "1_bar"  # ~10%
-            elif voltage >= 3.1:
-                value = "0_bar"  # Critical but not dead
+                value = "5_bar"  # ~70–85%
+            elif voltage >= 3.87:
+                value = "4_bar"  # ~55–70%
+            elif voltage >= 3.82:
+                value = "3_bar"  # ~40–55%
+            elif voltage >= 3.77:
+                value = "2_bar"  # ~25–40%
+            elif voltage >= 3.70:
+                value = "1_bar"  # ~10–25%
+            elif voltage >= 3.50:
+                value = "0_bar"  # ~5–10%, very low but not dead
             else:
-                value = "alert"  # Below 3.1V - dead battery
+                value = "alert"  # <3.5 V: effectively empty, may brownout
 
     except Exception as e:
         print(f"Error determining battery icon: {e}")
@@ -167,11 +236,12 @@ def format_updated_time(iso_time):
 
 def get_current_date(updated_at):
     """Get current date formatted as day of week and month/date"""
+    timezone_offset = secrets.get("timezone_offset", 0)
     try:
-        current_time = datetime.fromisoformat(updated_at)
-
+        now = datetime.fromisoformat(updated_at).timestamp() + timezone_offset * 60 * 60
+        current_time = datetime.fromtimestamp(now)
         # Days of week (starting from Monday = 0)
-        days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
         months = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
                   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
@@ -184,10 +254,10 @@ def get_current_date(updated_at):
         day_name = days[weekday]
         month_name = months[month]
 
-        return day_name, f"{month_name} {date}"
+        return (f"{day_name}\n{month_name}\n{date}")
     except Exception as e:
         print(f"Date formatting error: {e}")
-        return "???", "??? ??"
+        return "???"
 
 
 def wind_direction_text(degrees):
@@ -207,7 +277,7 @@ def create_weather_display(weather_data):
     # Add white background
     color_bitmap = displayio.Bitmap(DISPLAY_WIDTH, DISPLAY_HEIGHT, 1)
     color_palette = displayio.Palette(1)
-    color_palette[0] = 0xFFFFFF  # White background
+    color_palette[0] = WHITE
     bg_sprite = displayio.TileGrid(color_bitmap, pixel_shader=color_palette)
     magtag.splash.append(bg_sprite)
 
@@ -230,6 +300,8 @@ def create_weather_display(weather_data):
     forecast_6h = current_data["data"]["next_12_hours"]
     updated_time = weather_data["properties"]["meta"]["updated_at"]
     fetched_at = rfc2822_to_iso(weather_data["properties"]["meta"].get("fetched_at"))
+    if fetched_at:
+        updated_time = fetched_at
 
     # Extract data
     temperature = instant_details["air_temperature"]
@@ -253,34 +325,17 @@ def create_weather_display(weather_data):
     # Create main group
     main_group = displayio.Group()
 
-    # Get current date
-    day_name, month_date = get_current_date(updated_time)
 
-    # Date display (left side, big text)
-    day_label = label.Label(
-        FONT,
-        text=f"{day_name}\n{month_date}",
-        color=BLACK,
-        x=10,
-        y=25
-    )
-    main_group.append(day_label)
-
-    # Weather icon (right side)
-    parts = symbol_code.split("_")
-    symbol_code_short = parts[0]
-    suffix = parts[1] if len(parts) > 1 else ''
-    if suffix and suffix != "day":
-        symbol_code_short = symbol_code
+    icon_x = 50
     try:
-        icon_file = f"icons/{symbol_code_short}.bmp"
+        icon_file = f"icons/{WEATHER_ICON_NAMES.get(symbol_code, 'unknown')}.bmp"
         print(f"Looking for icon: {icon_file}")
         icon_bitmap = displayio.OnDiskBitmap(icon_file)
         icon_sprite = displayio.TileGrid(
             icon_bitmap,
             pixel_shader=icon_bitmap.pixel_shader,
-            x=DISPLAY_WIDTH - ICON_SIZE - 10,  # Right aligned with margin
-            y=5
+            x=icon_x,
+            y=-8
         )
         main_group.append(icon_sprite)
         icon_loaded = True
@@ -293,80 +348,35 @@ def create_weather_display(weather_data):
     if not icon_loaded:
         icon_text = label.Label(
             terminalio.FONT,
-            text=symbol_code[:12],  # Truncate if too long
+            text=f"ERROR:\n{symbol_code[:12]}\nIcon not found.",
             color=BLACK,
-            x=DISPLAY_WIDTH - 80,
-            y=30
+            x=icon_x,
+            y=20
         )
         main_group.append(icon_text)
-
-    # Temperature (right side, below icon)
-    temp_text = f"{temperature:.1f}°"
-    temp_label = label.Label(
+    # Date display (left side, big text)
+    main_group.append(label.Label(
         FONT,
-        text=temp_text,
+        text=get_current_date(updated_time),
         color=BLACK,
-        x=DISPLAY_WIDTH - 80,  # Right aligned
-        y=80
-    )
-    main_group.append(temp_label)
+        x=5,
+        y=25,
+    ))
 
-    # Weather details (center section)
-    details_y = 95
-    hi_lo_text = f"{min_temperature:.1f} | {max_temperature}"
-    hi_lo_label = label.Label(
-        terminalio.FONT,
-        text=hi_lo_text,
+    main_group.append(label.Label(
+        BIG_FONT,
+        text=f"{max_temperature:.1f}º",
         color=BLACK,
-        x=DISPLAY_WIDTH - 80,
-        y=98
-    )
-    main_group.append(hi_lo_label)
-
-    # Precipitation
-    precip_text = f"Rain: {precipitation}mm"
-    precip_label = label.Label(
-        terminalio.FONT,
-        text=precip_text,
-        color=BLACK,
-        x=10,
-        y=details_y
-    )
-    main_group.append(precip_label)
-
-    # Wind
-    wind_dir = wind_direction_text(wind_direction)
-    wind_text = f"Wind: {wind_speed}m/s {wind_dir}"
-    wind_label = label.Label(
-        terminalio.FONT,
-        text=wind_text,
-        color=BLACK,
-        x=10,
-        y=details_y + 12
-    )
-    main_group.append(wind_label)
-
-    # Humidity
-    humid_text = f"RH: {humidity:.0f}%"
-    humid_label = label.Label(
-        terminalio.FONT,
-        text=humid_text,
-        color=BLACK,
-        x=130,
-        y=details_y
-    )
-    main_group.append(humid_label)
-
-    # Pressure
-    pressure_text = f"P: {pressure:.0f}hPa"
-    pressure_label = label.Label(
-        terminalio.FONT,
-        text=pressure_text,
-        color=BLACK,
-        x=130,
-        y=details_y + 12
-    )
-    main_group.append(pressure_label)
+        x=175,
+        y=25
+    ))
+    main_group.append(label.Label(
+        BIG_FONT,
+        text=f"{min_temperature:.1f}º",
+        color=GREY,
+        x=175,
+        y=90
+    ))
 
     # Updated time (bottom right corner)
     updated_text = f"updated: {format_updated_time(fetched_at)}"
