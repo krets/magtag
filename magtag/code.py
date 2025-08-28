@@ -42,8 +42,8 @@ ICON_SIZE = 64
 
 WHITE = 0xFFFFFF
 BLACK = 0x000000
-GREY = int(WHITE*.75)
-LIGHT_GREY = int(GREY*0.25)
+GREY = 0x404040
+LIGHT_GREY = 0xB0B0B0
 
 # Set up VBUS detection for USB power
 try:
@@ -117,6 +117,8 @@ def get_weather_data():
         print(f"URL: {url}")
         response = requests.get(url, headers=headers)
         data = response.json()
+        print(f"Response Headers: {response.headers}")
+        data['properties']['meta']['fetched_at'] = response.headers.get("date", '')
         print("Weather data received")
 
         # Clean up
@@ -127,6 +129,25 @@ def get_weather_data():
         print(f"Weather fetch error: {e}")
         return None
 
+def rfc2822_to_iso(d):
+    """
+    Thu, 28 Aug 2025 19:57:24 GMT
+    """
+    if d is None:
+        return ''
+    months = {'Jan':1,'Feb':2,'Mar':3,'Apr':4,'May':5,'Jun':6,
+              'Jul':7,'Aug':8,'Sep':9,'Oct':10,'Nov':11,'Dec':12}
+    parts = d.replace(',', '').split()
+    print(f"parsing datetime: {parts}")
+    if len(parts) < 5:
+        print(f"Ouch; no date: {d}")
+        return ''
+    day = int(parts[1])
+    month = months[parts[2]]
+    year = int(parts[3])
+    h,m,s = map(int, parts[4].split(':'))
+    dt = datetime(year, month, day, h, m, s)
+    return dt.isoformat()
 
 def format_updated_time(iso_time):
     """Format ISO time to local timezone HH:MM format"""
@@ -208,6 +229,7 @@ def create_weather_display(weather_data):
     instant_details = current_data["data"]["instant"]["details"]
     forecast_6h = current_data["data"]["next_12_hours"]
     updated_time = weather_data["properties"]["meta"]["updated_at"]
+    fetched_at = rfc2822_to_iso(weather_data["properties"]["meta"].get("fetched_at"))
 
     # Extract data
     temperature = instant_details["air_temperature"]
@@ -220,7 +242,7 @@ def create_weather_display(weather_data):
 
     min_temperature = 50.0
     max_temperature = -50.0
-    for entry in timeseries[:12]:
+    for entry in timeseries[:24]:
         entry_temp = entry["data"]["instant"]["details"]["air_temperature"]
         min_temperature = min(entry_temp, min_temperature)
         max_temperature = max(entry_temp, max_temperature)
@@ -347,11 +369,11 @@ def create_weather_display(weather_data):
     main_group.append(pressure_label)
 
     # Updated time (bottom right corner)
-    updated_text = f"updated: {format_updated_time(updated_time)}"
+    updated_text = f"updated: {format_updated_time(fetched_at)}"
     updated_label = label.Label(
         terminalio.FONT,
         text=updated_text,
-        color=LIGHT_GREY,
+        color=GREY,
         x=DISPLAY_WIDTH - 90,
         y=DISPLAY_HEIGHT - 8
     )
@@ -379,7 +401,7 @@ def create_weather_display(weather_data):
     voltage_label = label.Label(
         terminalio.FONT,
         text=voltage_text,
-        color=LIGHT_GREY,
+        color=GREY,
         x=22,
         y=DISPLAY_HEIGHT - 8
     )
