@@ -1,18 +1,22 @@
-from adafruit_datetime import datetime
+import time
 import ssl
+
+## CircuitPython
+import board
+import alarm
 import wifi
 import socketpool
-import adafruit_requests
 import displayio
-import time
-import alarm
-import board
-from adafruit_display_text import label
-from adafruit_magtag.magtag import MagTag
-from adafruit_bitmap_font import bitmap_font
 import terminalio
 import analogio
 import digitalio
+
+## Adafruit
+from adafruit_datetime import datetime
+import adafruit_requests
+from adafruit_display_text import label
+from adafruit_magtag.magtag import MagTag
+from adafruit_bitmap_font import bitmap_font
 
 # Get wifi details from secrets.py file
 try:
