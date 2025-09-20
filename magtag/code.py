@@ -358,28 +358,35 @@ def create_weather_display(weather_data):
             y=20
         )
         main_group.append(icon_text)
-    # Date display (left side, big text)
-    main_group.append(label.Label(
-        FONT,
-        text=get_current_date(updated_time),
-        color=BLACK,
-        x=5,
-        y=25,
-    ))
+    # Date display (left side, centered, big text)
+    date_text = get_current_date(updated_time)
+    date_lines = date_text.split('\n')
+    y_start = 13
+    line_spacing = int(25 * 1.35)  # 1.35x line spacing for 25pt font
+    for i, line in enumerate(date_lines):
+        # Center within the left area (before icon at x=50)
+        x_centered = 25 - len(line) * 6  # Approximate centering
+        main_group.append(label.Label(
+            FONT,
+            text=line,
+            color=BLACK,
+            x=max(5, x_centered),
+            y=y_start + i * line_spacing,
+        ))
 
     main_group.append(label.Label(
         BIG_FONT,
         text=f"{max_temperature:.1f}º",
         color=BLACK,
         x=175,
-        y=25
+        y=7
     ))
     main_group.append(label.Label(
         BIG_FONT,
         text=f"{min_temperature:.1f}º",
         color=GREY,
         x=175,
-        y=90
+        y=72
     ))
 
     # Updated time (bottom right corner)
@@ -389,7 +396,7 @@ def create_weather_display(weather_data):
         text=updated_text,
         color=GREY,
         x=DISPLAY_WIDTH - 90,
-        y=DISPLAY_HEIGHT - 8
+        y=DISPLAY_HEIGHT - 12
     )
     main_group.append(updated_label)
 
@@ -417,9 +424,98 @@ def create_weather_display(weather_data):
         text=voltage_text,
         color=GREY,
         x=22,
-        y=DISPLAY_HEIGHT - 8
+        y=DISPLAY_HEIGHT - 12
     )
     main_group.append(voltage_label)
+
+    # Weather histogram (bottom 12 pixels, aligned with weather icon)
+    histogram_height = 12
+    histogram_y = DISPLAY_HEIGHT - histogram_height
+    histogram_x = icon_x  # Align with weather icon
+    histogram_width = 128  # Icon width
+    column_width = 8  # 128 / 16 = 8 pixels per hour
+    
+    # Get next 16 hours of data
+    hourly_data = []
+    for i in range(min(16, len(timeseries))):
+        entry = timeseries[i]
+        temp = entry["data"]["instant"]["details"]["air_temperature"]
+        precip = 0
+        # Check for precipitation in next_1_hours
+        if "next_1_hours" in entry["data"]:
+            precip = entry["data"]["next_1_hours"]["details"].get("precipitation_amount", 0)
+        hourly_data.append({"temp": temp, "precip": precip})
+    
+    if hourly_data:
+        # Calculate temperature range for scaling
+        temps = [h["temp"] for h in hourly_data]
+        temp_min_hist, temp_max_hist = min(temps), max(temps)
+        temp_range = temp_max_hist - temp_min_hist if temp_max_hist != temp_min_hist else 1
+        temp_mid = (temp_min_hist + temp_max_hist) / 2
+        
+        # Calculate precipitation range for scaling
+        precips = [h["precip"] for h in hourly_data]
+        precip_max = max(precips) if precips else 1
+        precip_max = precip_max if precip_max > 0 else 1
+        
+        # Create histogram bitmap
+        histogram_bitmap = displayio.Bitmap(histogram_width, histogram_height, 3)
+        histogram_palette = displayio.Palette(3)
+        histogram_palette[0] = WHITE  # Background
+        histogram_palette[1] = GREY   # Temperature bars
+        histogram_palette[2] = BLACK  # Precipitation bars
+        
+        # Fill with white background
+        for x in range(histogram_width):
+            for y in range(histogram_height):
+                histogram_bitmap[x, y] = 0
+        
+        # Draw temperature bars (grey)
+        for i, data in enumerate(hourly_data):
+            x_start = i * column_width
+            temp = data["temp"]
+            
+            # Scale temperature to histogram height
+            temp_offset = (temp - temp_mid) / temp_range * (histogram_height / 2)
+            mid_y = histogram_height // 2
+            
+            if temp_offset > 0:
+                # Temperature above average - bar goes up from middle
+                bar_top = max(0, int(mid_y - temp_offset))
+                for x in range(x_start, min(x_start + column_width, histogram_width)):
+                    for y in range(bar_top, mid_y):
+                        histogram_bitmap[x, y] = 1
+            else:
+                # Temperature below average - bar goes down from middle
+                bar_bottom = min(histogram_height, int(mid_y - temp_offset))
+                for x in range(x_start, min(x_start + column_width, histogram_width)):
+                    for y in range(mid_y, bar_bottom):
+                        histogram_bitmap[x, y] = 1
+        
+        # Draw precipitation bars (black, 4 pixels wide with 4 pixel gap)
+        for i, data in enumerate(hourly_data):
+            x_start = i * column_width
+            precip = data["precip"]
+            
+            if precip > 0:
+                # Scale precipitation to histogram height
+                precip_height = int((precip / precip_max) * histogram_height)
+                precip_height = max(1, precip_height)  # At least 1 pixel if there's precipitation
+                
+                # Draw 4-pixel wide black bar from bottom
+                bar_top = histogram_height - precip_height
+                for x in range(x_start, min(x_start + 4, histogram_width)):
+                    for y in range(bar_top, histogram_height):
+                        histogram_bitmap[x, y] = 2
+        
+        # Add histogram to display
+        histogram_sprite = displayio.TileGrid(
+            histogram_bitmap,
+            pixel_shader=histogram_palette,
+            x=histogram_x,
+            y=histogram_y
+        )
+        main_group.append(histogram_sprite)
 
     magtag.splash.append(main_group)
 
