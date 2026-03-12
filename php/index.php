@@ -317,8 +317,10 @@ function getDailyForecasts($timeseries, $timezoneOffset = 0, $days = 5) {
     return $dailyData;
 }
 
-function drawLargeText($image, $text, $x, $y, $color, $size = 36) {
-    $fontPath = __DIR__ . '/B612-Regular.ttf';
+function drawLargeText($image, $text, $x, $y, $color, $size = 36, $bold = false) {
+    $fontFile = $bold ? 'B612-Bold.ttf' : 'B612-Regular.ttf';
+    $fontPath = __DIR__ . '/' . $fontFile;
+    if (!file_exists($fontPath)) $fontPath = __DIR__ . '/B612-Regular.ttf';
     
     if (file_exists($fontPath)) {
         $adjustedY = $y + $size;
@@ -328,8 +330,10 @@ function drawLargeText($image, $text, $x, $y, $color, $size = 36) {
     }
 }
 
-function drawText($image, $text, $x, $y, $color, $size = 12) {
-    $fontPath = __DIR__ . '/B612-Regular.ttf';
+function drawText($image, $text, $x, $y, $color, $size = 12, $bold = false) {
+    $fontFile = $bold ? 'B612-Bold.ttf' : 'B612-Regular.ttf';
+    $fontPath = __DIR__ . '/' . $fontFile;
+    if (!file_exists($fontPath)) $fontPath = __DIR__ . '/B612-Regular.ttf';
 
     if (file_exists($fontPath)) {
         $adjustedY = $y + $size;
@@ -339,8 +343,10 @@ function drawText($image, $text, $x, $y, $color, $size = 12) {
     }
 }
 
-function drawCenteredText($image, $text, $centerX, $y, $color, $size = 12) {
-    $fontPath = __DIR__ . '/B612-Regular.ttf';
+function drawCenteredText($image, $text, $centerX, $y, $color, $size = 12, $bold = false) {
+    $fontFile = $bold ? 'B612-Bold.ttf' : 'B612-Regular.ttf';
+    $fontPath = __DIR__ . '/' . $fontFile;
+    if (!file_exists($fontPath)) $fontPath = __DIR__ . '/B612-Regular.ttf';
 
     if (file_exists($fontPath)) {
         $bbox = imagettfbbox($size, 0, $fontPath, $text);
@@ -375,8 +381,10 @@ function drawDateWithOrdinal($image, $day, $ordinal, $x, $y, $color) {
     }
 }
 
-function drawRightAlignedText($image, $text, $rightX, $y, $color, $size = 40) {
-    $fontPath = __DIR__ . '/B612-Regular.ttf';
+function drawRightAlignedText($image, $text, $rightX, $y, $color, $size = 40, $bold = false) {
+    $fontFile = $bold ? 'B612-Bold.ttf' : 'B612-Regular.ttf';
+    $fontPath = __DIR__ . '/' . $fontFile;
+    if (!file_exists($fontPath)) $fontPath = __DIR__ . '/B612-Regular.ttf';
 
     if (file_exists($fontPath)) {
         $bbox = imagettfbbox($size, 0, $fontPath, $text);
@@ -460,6 +468,7 @@ function createForecastDisplay($weatherData, $batteryVoltage = 3.8, $timezoneOff
     $white = imagecolorallocate($image, 255, 255, 255);
     $black = imagecolorallocate($image, 0, 0, 0);
     $gray = imagecolorallocate($image, 128, 128, 128);
+    $lightgray = imagecolorallocate($image, 170, 170, 170); // For contrast on black
 
     imagefill($image, 0, 0, $white);
 
@@ -473,44 +482,97 @@ function createForecastDisplay($weatherData, $batteryVoltage = 3.8, $timezoneOff
     $updated = $weatherData['properties']['meta']['updated_at'];
 
     $forecasts = getDailyForecasts($timeseries, $timezoneOffset, 5);
-
     $currentDateInfo = getDateInfo($updated, $timezoneOffset);
-    drawCenteredText($image, $currentDateInfo['month'] . ' ' . $currentDateInfo['day'], $width / 2, 5, $black, 14);
+    
+    // Row 1: White background for Today's Info [Icon] [High] [Low]
+    $headerHeight = 62; // Increased from 55
+    
+    $today = $forecasts[0];
+    $baseSymbol = str_replace(['_day', '_night'], '', $today['symbol']);
+    $iconPath = "icons/{$baseSymbol}.png";
+    $weatherIcon = loadAndResizeIcon($iconPath, 52, 52); // Slightly larger
+    if (!$weatherIcon) {
+        $iconPath = "icons/{$today['symbol']}.png";
+        $weatherIcon = loadAndResizeIcon($iconPath, 52, 52);
+    }
 
-    imageline($image, 5, 25, $width - 5, 25, $black);
+    if ($weatherIcon) {
+        // Far left, 0 margin, centered vertically in its row
+        imagecopy($image, $weatherIcon, 0, 5, 0, 0, 52, 52);
+        imagedestroy($weatherIcon);
+    }
 
-    $startY = 30;
-    $rowHeight = 52; 
+    // Today's High/Low in Header (Black/Gray) - Centered in remaining space
+    $highText = sprintf('%d°', $today['high']);
+    $lowText = sprintf('%d°', $today['low']);
+    $fontPathReg = __DIR__ . '/B612-Regular.ttf';
+    $fontPathBold = __DIR__ . '/B612-Bold.ttf';
+    
+    $fontSize = 18; // Reduced from 24 to prevent overflow in portrait mode
+    $gap = 4;       // Reduced from 8
+    $iconSpace = 52;
+
+    // Calculate widths for precise centering
+    $bboxHigh = imagettfbbox($fontSize, 0, $fontPathReg, $highText);
+    $wH = $bboxHigh[2] - $bboxHigh[0];
+    $bboxLow = imagettfbbox($fontSize, 0, $fontPathBold, $lowText);
+    $wL = $bboxLow[2] - $bboxLow[0];
+    
+    $totalTWidth = $wH + $gap + $wL;
+    $availableW = $width - $iconSpace;
+    
+    // Center the pair in the space to the right of the icon
+    $startX = $iconSpace + ($availableW - $totalTWidth) / 2;
+    
+    // Ensure we don't overlap the icon or go off-screen
+    if ($startX < $iconSpace) $startX = $iconSpace + 2;
+    if ($startX + $totalTWidth > $width - 2) {
+        $startX = $width - $totalTWidth - 2;
+    }
+
+    $textY = 18; // Adjusted vertical position for smaller font
+    drawText($image, $highText, $startX, $textY, $black, $fontSize);
+    drawText($image, $lowText, $startX + $wH + $gap, $textY, $gray, $fontSize, true);
+
+    // Row 2: Black background for the Date
+    $dateRowHeight = 30; // Increased from 28
+    $dateY = $headerHeight - 2; // Moved up by 2px
+    imagefilledrectangle($image, 0, $dateY, $width, $dateY + $dateRowHeight, $black);
+    
+    $dateText = $currentDateInfo['dayname'] . ' ' . $currentDateInfo['month'] . ' ' . $currentDateInfo['day'];
+    drawCenteredText($image, $dateText, $width / 2, $dateY + 7, $white, 14, true);
+
+    $startY = $dateY + $dateRowHeight;
+    $rowHeight = 49; // Increased from 42 to fill the gap (49 * 4 = 196)
 
     foreach ($forecasts as $index => $forecast) {
-        $y = $startY + ($index * $rowHeight);
+        if ($index === 0) continue; 
+        
+        $y = $startY + (($index - 1) * $rowHeight);
 
-        drawText($image, $forecast['dayname'], 5, $y + 2, $black, 12);
+        // Future days: Day name (left), Icon (center), right-aligned high/low (right)
+        drawText($image, $forecast['dayname'], 5, $y + 5, $black, 12);
 
         $baseSymbol = str_replace(['_day', '_night'], '', $forecast['symbol']);
         $iconPath = "icons/{$baseSymbol}.png";
-        $weatherIcon = loadAndResizeIcon($iconPath, 40, 40);
+        $weatherIcon = loadAndResizeIcon($iconPath, 38, 38);
 
         if (!$weatherIcon) {
             $iconPath = "icons/{$forecast['symbol']}.png";
-            $weatherIcon = loadAndResizeIcon($iconPath, 40, 40);
+            $weatherIcon = loadAndResizeIcon($iconPath, 38, 38);
         }
 
         if ($weatherIcon) {
-            imagecopy($image, $weatherIcon, ($width / 2) - 20, $y, 0, 0, 40, 40);
+            imagecopy($image, $weatherIcon, ($width / 2) - 19, $y + 2, 0, 0, 38, 38);
             imagedestroy($weatherIcon);
-        } else {
-            $debugText = $forecast['symbol'];
-            if ($debugText === 'unknown') $debugText = 'no symbol';
-            if (strlen($debugText) > 10) $debugText = substr($debugText, 0, 10) . '..';
-            drawCenteredText($image, $debugText, $width / 2, $y + 20, $gray, 8);
         }
 
-        drawText($image, sprintf('%d°', $forecast['high']), $width - 32, $y + 2, $black, 14);
-        drawText($image, sprintf('%d°', $forecast['low']), $width - 32, $y + 22, $gray, 14);
+        // Right-aligned temperatures
+        drawRightAlignedText($image, sprintf('%d°', $forecast['high']), $width - 5, $y + 4, $black, 14);
+        drawRightAlignedText($image, sprintf('%d°', $forecast['low']), $width - 5, $y + 24, $gray, 14, true);
 
         if ($index < count($forecasts) - 1) {
-            imageline($image, 5, $y + $rowHeight - 2, $width - 5, $y + $rowHeight - 2, $gray);
+            imageline($image, 5, $y + $rowHeight - 1, $width - 5, $y + $rowHeight - 1, $gray);
         }
     }
 
@@ -639,7 +701,8 @@ function createWeatherDisplay($weatherData, $batteryVoltage = 3.8, $timezoneOffs
     }
 
     if ($minTemp !== null) {
-        $lowTempRightEdge = drawRightAlignedText($image, sprintf('%.0f°', $minTemp), $rightEdge - 2, 70, $gray, 40);
+        $lowTempStr = sprintf('%.0f°', $minTemp);
+        $lowTempRightEdge = drawRightAlignedText($image, $lowTempStr, $rightEdge - 2, 70, $gray, 40, true);
         if ($minTime) drawTimeLabel($image, $minTime, $lowTempRightEdge + 2, 98, $black);
     }
 
@@ -666,7 +729,8 @@ $finalWidth = imagesx($image);
 $finalHeight = imagesy($image);
 
 try {
-    if ($orientation === 'portrait_up' || $orientation === 'portrait_left') {
+    if ($orientation === 'portrait_up') {
+        // Standard portrait up
         $rotated = imagerotate($image, -90, imagecolorallocate($image, 255, 255, 255));
         if ($rotated !== false) {
             imagedestroy($image);
@@ -674,7 +738,8 @@ try {
             $finalWidth = imagesx($image);
             $finalHeight = imagesy($image);
         }
-    } elseif ($orientation === 'portrait_down') {
+    } elseif ($orientation === 'portrait_down' || $orientation === 'portrait_left') {
+        // Consolidated logic for portrait_down and portrait_left
         $rotated = imagerotate($image, 90, imagecolorallocate($image, 255, 255, 255));
         if ($rotated !== false) {
             imagedestroy($image);
@@ -707,6 +772,9 @@ for ($y = 0; $y < $finalHeight; $y++) {
         imagesetpixel($indexed, $x, $y, $color);
     }
 }
+
+// Draw border directly on the final image
+imagerectangle($indexed, 0, 0, $finalWidth - 1, $finalHeight - 1, $black);
 
 imagebmp($indexed);
 imagedestroy($indexed);
