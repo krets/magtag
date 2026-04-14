@@ -8,15 +8,11 @@ import wifi
 import socketpool
 import displayio
 import terminalio
-import analogio
-import digitalio
+import io
 
 ## Adafruit
-from adafruit_datetime import datetime
 import adafruit_requests
-from adafruit_display_text import label
-from adafruit_magtag.magtag import MagTag
-from adafruit_bitmap_font import bitmap_font
+import adafruit_imageload
 
 # Get wifi details from secrets.py file
 try:
@@ -25,130 +21,14 @@ except ImportError:
     print("WiFi secrets are kept in secrets.py, please add them there!")
     raise
 
-try:
-    FONT = bitmap_font.load_font("Roboto-Regular-25.bdf")
-    BIG_FONT = bitmap_font.load_font("Roboto-Regular-50.bdf")
-    print("Custom font loaded successfully")
-except Exception as e:
-    print(f"Could not load custom font: {e}")
-    BIG_FONT = FONT = terminalio.FONT  # Fallback to default
-
-# Initialize MagTag
-print("Initializing MagTag...")
-magtag = MagTag()
-
-YR_API_URL = "https://api.met.no/weatherapi/locationforecast/2.0/compact"
-USER_AGENT = "Magtag 0.1.2/ (jesse@krets.com)"
-
 # Display constants
 DISPLAY_WIDTH = 296
 DISPLAY_HEIGHT = 128
 
-WHITE = 0xFFFFFF
-BLACK = 0x000000
-GREY = 0x404040
-LIGHT_GREY = 0xB0B0B0
-
-# Set up VBUS detection for USB power # This does not work yet.
-try:
-    vbus_pin = digitalio.DigitalInOut(board.VBUS_SENSE)
-    vbus_pin.direction = digitalio.Direction.INPUT
-    has_vbus = True
-    print("VBUS detection available")
-except AttributeError:
-    has_vbus = False
-    print("VBUS detection not available, using voltage method")
-
-
-WEATHER_ICON_NAMES = {
-    "clearsky_day": "clear",
-    "clearsky_night": "nt_clear",
-    "cloudy": "cloudy",
-    "fair_day": "partlysunny",
-    "fair_night": "nt_partlysunny",
-    "fog": "fog",
-    "heavyrain": "rain",
-    "heavyrainandthunder": "tstorms",
-    "heavyrainshowers_day": "chancerain",
-    "heavyrainshowers_night": "nt_chancerain",
-    "heavyrainshowersandthunder_day": "chancetstorms",
-    "heavyrainshowersandthunder_night": "nt_chancetstorms",
-    "heavysleet": "sleet",
-    "heavysleetandthunder": "tstorms",
-    "heavysleetshowers_day": "chancesleet",
-    "heavysleetshowers_night": "nt_chancesleet",
-    "heavysleetshowersandthunder_day": "chancetstorms",
-    "heavysleetshowersandthunder_night": "nt_chancetstorms",
-    "heavysnow": "snow",
-    "heavysnowandthunder": "tstorms",
-    "heavysnowshowers_day": "chancesnow",
-    "heavysnowshowers_night": "nt_chancesnow",
-    "heavysnowshowersandthunder_day": "chancetstorms",
-    "heavysnowshowersandthunder_night": "nt_chancetstorms",
-    "lightrain": "rain",
-    "lightrainandthunder": "tstorms",
-    "lightrainshowers_day": "chancerain",
-    "lightrainshowers_night": "nt_chancerain",
-    "lightrainshowersandthunder_day": "chancetstorms",
-    "lightrainshowersandthunder_night": "nt_chancetstorms",
-    "lightsleet": "sleet",
-    "lightsleetandthunder": "tstorms",
-    "lightsleetshowers_day": "chancesleet",
-    "lightsleetshowers_night": "nt_chancesleet",
-    "lightsnow": "snow",
-    "lightsnowandthunder": "tstorms",
-    "lightsnowshowers_day": "chancesnow",
-    "lightsnowshowers_night": "nt_chancesnow",
-    "lightssleetshowersandthunder_day": "chancetstorms",
-    "lightssleetshowersandthunder_night": "nt_chancetstorms",
-    "lightssnowshowersandthunder_day": "chancetstorms",
-    "lightssnowshowersandthunder_night": "nt_chancetstorms",
-    "partlycloudy_day": "partlycloudy",
-    "partlycloudy_night": "nt_partlycloudy",
-    "rain": "rain",
-    "rainandthunder": "tstorms",
-    "rainshowers_day": "chancerain",
-    "rainshowers_night": "nt_chancerain",
-    "rainshowersandthunder_day": "chancetstorms",
-    "rainshowersandthunder_night": "nt_chancetstorms",
-    "sleet": "sleet",
-    "sleetandthunder": "tstorms",
-    "sleetshowers_day": "chancesleet",
-    "sleetshowers_night": "nt_chancesleet",
-    "sleetshowersandthunder_day": "chancetstorms",
-    "sleetshowersandthunder_night": "nt_chancetstorms",
-    "snow": "snow",
-    "snowandthunder": "tstorms",
-    "snowshowers_day": "chancesnow",
-    "snowshowers_night": "nt_chancesnow",
-    "snowshowersandthunder_day": "chancetstorms",
-    "snowshowersandthunder_night": "nt_chancetstorms",
-}
-
-
-def get_battery_icon_name(voltage):
-    """Determine which battery icon to use based on voltage level"""
-    try:
-        # Check if charging (USB connected)
-        if has_vbus and vbus_pin.value:
-            value = "charging_full"
-        else:
-            # Piecewise mapping from README
-            if voltage >= 4.1: value = "full"
-            elif voltage >= 4.0: value = "6_bar"
-            elif voltage >= 3.8: value = "5_bar"
-            elif voltage >= 3.7: value = "4_bar"
-            elif voltage >= 3.6: value = "3_bar"
-            elif voltage >= 3.5: value = "2_bar"
-            elif voltage >= 3.4: value = "1_bar"
-            elif voltage >= 3.3: value = "0_bar"
-            else: value = "alert"
-
-    except Exception as e:
-        print(f"Error determining battery icon: {e}")
-        value = "alert"
-    return "battery_%s_90deg.bmp" % value
-
+# Battery tracking variables (reset on each boot since filesystem is read-only)
+BATTERY_THRESHOLD = 4.1
+battery_drop_time = None
+last_battery_voltage = 4.2
 
 def connect_wifi():
     """Connect to WiFi network"""
@@ -161,423 +41,243 @@ def connect_wifi():
         print(f"WiFi failed: {e}")
         return False
 
-
-def get_weather_data(battery_voltage):
-    """Fetch weather data from PHP server or yr.no"""
+def get_orientation():
+    """Detect MagTag orientation using accelerometer"""
     try:
+        import adafruit_lis3dh
+        import busio
+        
+        # Initialize I2C and accelerometer
+        i2c = busio.I2C(board.SCL, board.SDA)
+        
+        # Try different I2C addresses that LIS3DH might use
+        addresses_to_try = [0x18, 0x19]  # 0x18 is default, 0x19 is alternate
+        
+        lis3dh = None
+        for addr in addresses_to_try:
+            try:
+                lis3dh = adafruit_lis3dh.LIS3DH_I2C(i2c, address=addr)
+                print(f"Found accelerometer at address 0x{addr:02X}")
+                break
+            except ValueError as addr_error:
+                print(f"No accelerometer at address 0x{addr:02X}: {addr_error}")
+                continue
+        
+        if lis3dh is None:
+            print("Could not find accelerometer at any address")
+            return "landscape_left"
+        
+        # Get acceleration values
+        x, y, z = lis3dh.acceleration
+        print(f"Acceleration: x={x:.2f}, y={y:.2f}, z={z:.2f}")
+        
+        # Determine orientation based on which axis has strongest gravity
+        # MagTag coordinate system: when in default landscape_left position (USB on left):
+        # - x points right (positive when tilted right)
+        # - y points up (positive when tilted up/back)
+        # - z points out of screen (positive when face up)
+        
+        if abs(y) > abs(x):
+            if y > 0:
+                return "landscape_right"  # USB port on right (y+ = gravity pulling right)
+            else:
+                return "landscape_left"   # USB port on left (y- = gravity pulling left)
+        else:
+            if x > 0:
+                return "portrait_left"    # USB port on top (x+ = gravity pulling down in portrait)
+            else:
+                return "portrait_up"      # USB port on bottom (x- = gravity pulling up in portrait)
+                
+    except ImportError:
+        print("adafruit_lis3dh library not available")
+        return "landscape_left"
+    except Exception as e:
+        print(f"Could not read orientation: {e}")
+        return "landscape_left"  # Default orientation
+
+def update_battery_tracking(current_voltage):
+    """Update battery tracking and return hours since drop below threshold"""
+    global battery_drop_time, last_battery_voltage
+    
+    current_time = time.monotonic()
+    
+    # Check if voltage dropped below threshold for the first time
+    if (battery_drop_time is None and 
+        current_voltage < BATTERY_THRESHOLD and 
+        last_battery_voltage >= BATTERY_THRESHOLD):
+        
+        battery_drop_time = current_time
+        print(f"Battery dropped below {BATTERY_THRESHOLD}V at {current_time}")
+    
+    # Reset tracking if voltage goes back above threshold
+    elif current_voltage >= BATTERY_THRESHOLD and battery_drop_time is not None:
+        battery_drop_time = None
+        print(f"Battery recovered above {BATTERY_THRESHOLD}V, resetting tracking")
+    
+    last_battery_voltage = current_voltage
+    
+    # Calculate hours since drop
+    if battery_drop_time is not None:
+        hours_elapsed = (current_time - battery_drop_time) / 3600
+        return int(hours_elapsed)
+    
+    return None
+
+
+def download_and_display_image():
+    """Download BMP image from PHP endpoint and display it"""
+    try:
+        # Get location and battery info
+        lat = secrets.get("latitude", 52.5)
+        lon = secrets.get("longitude", 13.45)
+        timezone_offset = secrets.get("timezone_offset", 0)
+
+        # Get battery voltage
+        battery_voltage = 3.8  # Default value
+        try:
+            import analogio
+            battery_pin = analogio.AnalogIn(board.BATTERY)
+            # Convert ADC reading to voltage (MagTag specific calculation)
+            battery_voltage = (battery_pin.value * 3.3) / 65536 * 2
+            battery_pin.deinit()
+        except Exception as e:
+            print(f"Could not read battery voltage: {e}")
+
+        # Update battery tracking
+        hours_since_drop = update_battery_tracking(battery_voltage)
+        if hours_since_drop is not None:
+            print(f"Battery tracking: {hours_since_drop}h since drop below {BATTERY_THRESHOLD}V")
+        else:
+            print("Battery tracking: no drop detected")
+
+        # Get orientation
+        orientation = get_orientation()
+        print(f"Detected orientation: {orientation}")
+
+        # Build URL for PHP endpoint
+        php_url = secrets.get("php_endpoint", "https://krets.com/magtag/")
+        url = f"{php_url}?lat={lat}&lon={lon}&battery={battery_voltage:.1f}&timezone={timezone_offset:+d}&orientation={orientation}"
+
+        print(f"Downloading image from: {url}")
+
+        # Create HTTP session
         pool = socketpool.SocketPool(wifi.radio)
         requests = adafruit_requests.Session(pool, ssl.create_default_context())
 
-        lat = secrets.get("latitude", 47.6062)
-        lon = secrets.get("longitude", -122.3321)
-        
-        # PHP Server URL (if configured)
-        php_server = secrets.get("php_server")
-        if php_server:
-            url = f"{php_server}?lat={lat}&lon={lon}&battery={battery_voltage:.2f}"
-            print(f"Fetching from PHP server: {url}")
-        else:
-            url = f"{YR_API_URL}?lat={lat}&lon={lon}"
-            print(f"Fetching weather for {lat}, {lon}...")
+        # Download the BMP image
+        response = requests.get(url)
 
-        headers = {"User-Agent": USER_AGENT}
-        response = requests.get(url, headers=headers)
-        data = response.json()
-        print(f"Response Headers: {response.headers}")
-        data['properties']['meta']['fetched_at'] = response.headers.get("date", '')
-        print("Weather data received")
+        if response.status_code != 200:
+            print(f"HTTP error: {response.status_code}")
+            return False
 
-        # Clean up
+        print("Image downloaded successfully")
+
+        # Get the display
+        display = board.DISPLAY
+
+        # Get the BMP data
+        bmp_data = response.content
         response.close()
-        requests._session = None
-        return data
+
+        bitmap, palette = adafruit_imageload.load(io.BytesIO(bmp_data))
+
+        # Create display group
+        tile_grid = displayio.TileGrid(bitmap, pixel_shader=palette)
+        group = displayio.Group()
+        group.append(tile_grid)
+
+        display.root_group = group
+        display.refresh()
+
+        # Add battery tracking overlay if tracking is active
+        hours_since_drop = update_battery_tracking(battery_voltage)
+        if hours_since_drop is not None:
+            from adafruit_display_text import label
+
+            # Create battery tracking text
+            battery_text = f"(since {hours_since_drop}h)"
+
+            # Position text at bottom center
+            text_width = len(battery_text) * 6  # Approximate width for small font
+            text_x = (bitmap.width - text_width) // 2
+            text_y = bitmap.height - 15
+
+            battery_label = label.Label(
+                terminalio.FONT,
+                text=battery_text,
+                color=0x000000,  # Black
+                x=text_x,
+                y=text_y
+            )
+            group.append(battery_label)
+
+            # Refresh display with battery tracking text
+            display.root_group = group
+            display.refresh()
+            print(f"Added battery tracking text: {battery_text}")
+
+        print("Image displayed successfully")
+        return True
+
     except Exception as e:
-        print(f"Weather fetch error: {e}")
-        return None
-
-def rfc2822_to_iso(d):
-    """
-    Thu, 28 Aug 2025 19:57:24 GMT
-    """
-    if d is None:
-        return ''
-    months = {'Jan':1,'Feb':2,'Mar':3,'Apr':4,'May':5,'Jun':6,
-              'Jul':7,'Aug':8,'Sep':9,'Oct':10,'Nov':11,'Dec':12}
-    parts = d.replace(',', '').split()
-    print(f"parsing datetime: {parts}")
-    if len(parts) < 5:
-        print(f"Ouch; no date: {d}")
-        return ''
-    day = int(parts[1])
-    month = months[parts[2]]
-    year = int(parts[3])
-    h,m,s = map(int, parts[4].split(':'))
-    dt = datetime(year, month, day, h, m, s)
-    return dt.isoformat()
-
-def format_updated_time(iso_time):
-    """Format ISO time to local timezone HH:MM format"""
+        print(f"Error downloading/displaying image: {e}")
+        return False
+def show_error_message(message):
+    """Display an error message on the screen"""
     try:
-        updated_time = datetime.fromisoformat(iso_time)
-        # Get timezone offset from secrets (in hours, e.g., -8 for PST, -7 for PDT)
-        timezone_offset = secrets.get("timezone_offset", 0)
-
-        # Apply timezone offset
-        hour = (updated_time.hour + timezone_offset) % 24
-
-        return f"{hour:02d}:{updated_time.minute:02d}"
-    except Exception as e:
-        print(f"Time formatting error: {e}")
-        return "??:??"
-
-
-def get_current_date(updated_at):
-    """Get current date formatted as day of week and month/date"""
-    timezone_offset = secrets.get("timezone_offset", 0)
-    try:
-        now = datetime.fromisoformat(updated_at).timestamp() + timezone_offset * 60 * 60
-        current_time = datetime.fromtimestamp(now)
-        # Days of week (starting from Monday = 0)
-        days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-        months = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-                  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-
-        # current_time is (year, month, date, hour, minute, second, weekday, yearday)
-        # weekday: 0 = Monday, 6 = Sunday
-        weekday = current_time.weekday()
-        month = current_time.month
-        date = current_time.day
-
-        day_name = days[weekday]
-        month_name = months[month]
-
-        return (f"{day_name}\n{month_name}\n{date}")
-    except Exception as e:
-        print(f"Date formatting error: {e}")
-        return "???"
-
-
-def wind_direction_text(degrees):
-    """Convert wind direction degrees to compass direction"""
-    directions = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
-                  "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"]
-    idx = int((degrees + 11.25) / 22.5) % 16
-    return directions[idx]
-
-
-def draw_error_overlay(message):
-    """Draw a non-destructive error overlay in the center of the screen"""
-    print(f"Displaying error overlay: {message}")
-    error_group = displayio.Group()
-    
-    # Dimensions
-    w, h = 240, 60
-    x, y = (DISPLAY_WIDTH - w) // 2, (DISPLAY_HEIGHT - h) // 2
-    
-    # Black background box
-    bg_bitmap = displayio.Bitmap(w, h, 1)
-    bg_palette = displayio.Palette(1)
-    bg_palette[0] = BLACK
-    bg_sprite = displayio.TileGrid(bg_bitmap, pixel_shader=bg_palette, x=x, y=y)
-    error_group.append(bg_sprite)
-    
-    # White text
-    error_label = label.Label(
-        terminalio.FONT,
-        text=message,
-        color=WHITE,
-        x=x + 10,
-        y=y + h // 2
-    )
-    error_group.append(error_label)
-    
-    magtag.splash.append(error_group)
-    magtag.refresh()
-
-def create_weather_display(weather_data):
-    """Create the weather display layout as a Group"""
-    # Create main group instead of using magtag.splash directly
-    display_group = displayio.Group()
-
-    # Add white background
-    color_bitmap = displayio.Bitmap(DISPLAY_WIDTH, DISPLAY_HEIGHT, 1)
-    color_palette = displayio.Palette(1)
-    color_palette[0] = WHITE
-    bg_sprite = displayio.TileGrid(color_bitmap, pixel_shader=color_palette)
-    display_group.append(bg_sprite)
-
-    if not weather_data:
-        # Error display (this shouldn't be reached if we handle it in main)
+        # Get the display
+        display = board.DISPLAY
+        
+        # Create a simple text display
+        splash = displayio.Group()
+        
+        # White background
+        color_bitmap = displayio.Bitmap(DISPLAY_WIDTH, DISPLAY_HEIGHT, 1)
+        color_palette = displayio.Palette(1)
+        color_palette[0] = 0xFFFFFF  # White
+        bg_sprite = displayio.TileGrid(color_bitmap, pixel_shader=color_palette)
+        splash.append(bg_sprite)
+        
+        # Error text
+        from adafruit_display_text import label
         error_label = label.Label(
             terminalio.FONT,
-            text="Weather data\nunavailable",
-            color=BLACK,
-            x=DISPLAY_WIDTH // 2 - 60,
+            text=message,
+            color=0x000000,  # Black
+            x=10,
             y=DISPLAY_HEIGHT // 2
         )
-        display_group.append(error_label)
-        return display_group
-
-    # Get first timeseries entry
-    timeseries = weather_data["properties"]["timeseries"]
-    current_data = timeseries[0]
-    instant_details = current_data["data"]["instant"]["details"]
-    forecast_6h = current_data["data"]["next_12_hours"]
-    updated_time = weather_data["properties"]["meta"]["updated_at"]
-    fetched_at = rfc2822_to_iso(weather_data["properties"]["meta"].get("fetched_at"))
-    if fetched_at:
-        updated_time = fetched_at
-
-    # Extract data
-    temperature = instant_details["air_temperature"]
-    symbol_code = forecast_6h["summary"]["symbol_code"]
-    precipitation = forecast_6h["details"].get("precipitation_amount", 0)
-    wind_speed = instant_details["wind_speed"]
-    wind_direction = instant_details["wind_from_direction"]
-    humidity = instant_details["relative_humidity"]
-    pressure = instant_details["air_pressure_at_sea_level"]
-
-    min_temperature = 50.0
-    max_temperature = -50.0
-    for entry in timeseries[:24]:
-        entry_temp = entry["data"]["instant"]["details"]["air_temperature"]
-        min_temperature = min(entry_temp, min_temperature)
-        max_temperature = max(entry_temp, max_temperature)
-
-    print(f"Symbol code: {symbol_code}")
-    print(f"Temperature: {temperature}°C")
-
-    # Create main group
-    main_group = displayio.Group()
-
-
-    icon_x = 50
-    try:
-        icon_file = f"icons/{WEATHER_ICON_NAMES.get(symbol_code, 'unknown')}.bmp"
-        print(f"Looking for icon: {icon_file}")
-        icon_bitmap = displayio.OnDiskBitmap(icon_file)
-        icon_sprite = displayio.TileGrid(
-            icon_bitmap,
-            pixel_shader=icon_bitmap.pixel_shader,
-            x=icon_x,
-            y=-8
-        )
-        main_group.append(icon_sprite)
-        icon_loaded = True
-        print("Icon loaded successfully")
-    except Exception as icon_error:
-        print(f"Could not load icon: {symbol_code}, error: {icon_error}")
-        icon_loaded = False
-
-    # If icon didn't load, show symbol code as text
-    if not icon_loaded:
-        icon_text = label.Label(
-            terminalio.FONT,
-            text=f"ERROR:\n{symbol_code[:12]}\nIcon not found.",
-            color=BLACK,
-            x=icon_x,
-            y=20
-        )
-        main_group.append(icon_text)
-    # Date display (left side, centered, big text)
-    date_text = get_current_date(updated_time)
-    date_lines = date_text.split('\n')
-    y_start = 13
-    line_spacing = int(25 * 1.35)  # 1.35x line spacing for 25pt font
-    for i, line in enumerate(date_lines):
-        # Center within the left area (before icon at x=50)
-        x_centered = 25 - len(line) * 6  # Approximate centering
-        main_group.append(label.Label(
-            FONT,
-            text=line,
-            color=BLACK,
-            x=max(5, x_centered),
-            y=y_start + i * line_spacing,
-        ))
-
-    main_group.append(label.Label(
-        BIG_FONT,
-        text=f"{max_temperature:.1f}º",
-        color=BLACK,
-        x=175,
-        y=7
-    ))
-    main_group.append(label.Label(
-        BIG_FONT,
-        text=f"{min_temperature:.1f}º",
-        color=GREY,
-        x=175,
-        y=72
-    ))
-
-    # Updated time (bottom right corner)
-    updated_text = f"updated: {format_updated_time(fetched_at)}"
-    updated_label = label.Label(
-        terminalio.FONT,
-        text=updated_text,
-        color=GREY,
-        x=DISPLAY_WIDTH - 90,
-        y=DISPLAY_HEIGHT - 12
-    )
-    main_group.append(updated_label)
-
-    # Battery icon (bottom left corner)
-    battery_voltage = magtag.peripherals.battery
-    battery_icon_name = get_battery_icon_name(battery_voltage)
-    try:
-        battery_icon_file = f"icons/{battery_icon_name}"
-        print(f"Loading battery icon: {battery_icon_file} (voltage: {battery_voltage:.2f}V)")
-        battery_bitmap = displayio.OnDiskBitmap(battery_icon_file)
-        battery_sprite = displayio.TileGrid(
-            battery_bitmap,
-            pixel_shader=battery_bitmap.pixel_shader,
-            x=2,
-            y=DISPLAY_HEIGHT - 14
-        )
-        main_group.insert(1, battery_sprite)
-        print("Battery icon loaded successfully")
-    except Exception as battery_error:
-        print(f"Could not load battery icon: {battery_error}")
-
-    voltage_text = f"{battery_voltage:.2f}V"
-    voltage_label = label.Label(
-        terminalio.FONT,
-        text=voltage_text,
-        color=GREY,
-        x=22,
-        y=DISPLAY_HEIGHT - 12
-    )
-    main_group.append(voltage_label)
-
-    # Weather histogram (bottom 12 pixels, aligned with weather icon)
-    histogram_height = 12
-    histogram_y = DISPLAY_HEIGHT - histogram_height
-    histogram_x = icon_x  # Align with weather icon
-    histogram_width = 128  # Icon width
-    column_width = 8  # 128 / 16 = 8 pixels per hour
-    
-    # Get next 16 hours of data
-    hourly_data = []
-    for i in range(min(16, len(timeseries))):
-        entry = timeseries[i]
-        temp = entry["data"]["instant"]["details"]["air_temperature"]
-        precip = 0
-        # Check for precipitation in next_1_hours
-        if "next_1_hours" in entry["data"]:
-            precip = entry["data"]["next_1_hours"]["details"].get("precipitation_amount", 0)
-        hourly_data.append({"temp": temp, "precip": precip})
-    
-    if hourly_data:
-        # Calculate temperature range for scaling
-        temps = [h["temp"] for h in hourly_data]
-        temp_min_hist, temp_max_hist = min(temps), max(temps)
-        temp_range = temp_max_hist - temp_min_hist if temp_max_hist != temp_min_hist else 1
-        temp_mid = (temp_min_hist + temp_max_hist) / 2
+        splash.append(error_label)
         
-        # Calculate precipitation range for scaling
-        precips = [h["precip"] for h in hourly_data]
-        precip_max = max(precips) if precips else 1
-        precip_max = precip_max if precip_max > 0 else 1
+        display.root_group = splash
+        display.refresh()
         
-        # Create histogram bitmap
-        histogram_bitmap = displayio.Bitmap(histogram_width, histogram_height, 3)
-        histogram_palette = displayio.Palette(3)
-        histogram_palette[0] = WHITE  # Background
-        histogram_palette[1] = GREY   # Temperature bars
-        histogram_palette[2] = BLACK  # Precipitation bars
-        
-        # Fill with white background
-        for x in range(histogram_width):
-            for y in range(histogram_height):
-                histogram_bitmap[x, y] = 0
-        
-        # Draw temperature bars (grey)
-        for i, data in enumerate(hourly_data):
-            x_start = i * column_width
-            temp = data["temp"]
-            
-            # Scale temperature to histogram height
-            temp_offset = (temp - temp_mid) / temp_range * (histogram_height / 2)
-            mid_y = histogram_height // 2
-            
-            if temp_offset > 0:
-                # Temperature above average - bar goes up from middle
-                bar_top = max(0, int(mid_y - temp_offset))
-                for x in range(x_start, min(x_start + column_width, histogram_width)):
-                    for y in range(bar_top, mid_y):
-                        histogram_bitmap[x, y] = 1
-            else:
-                # Temperature below average - bar goes down from middle
-                bar_bottom = min(histogram_height, int(mid_y - temp_offset))
-                for x in range(x_start, min(x_start + column_width, histogram_width)):
-                    for y in range(mid_y, bar_bottom):
-                        histogram_bitmap[x, y] = 1
-        
-        # Draw precipitation bars (black, 4 pixels wide with 4 pixel gap)
-        for i, data in enumerate(hourly_data):
-            x_start = i * column_width
-            precip = data["precip"]
-            
-            if precip > 0:
-                # Scale precipitation to histogram height
-                precip_height = int((precip / precip_max) * histogram_height)
-                precip_height = max(1, precip_height)  # At least 1 pixel if there's precipitation
-                
-                # Draw 4-pixel wide black bar from bottom
-                bar_top = histogram_height - precip_height
-                for x in range(x_start, min(x_start + 4, histogram_width)):
-                    for y in range(bar_top, histogram_height):
-                        histogram_bitmap[x, y] = 2
-        
-        # Add histogram to display
-        histogram_sprite = displayio.TileGrid(
-            histogram_bitmap,
-            pixel_shader=histogram_palette,
-            x=histogram_x,
-            y=histogram_y
-        )
-        main_group.append(histogram_sprite)
-
-    display_group.append(main_group)
-    return display_group
+    except Exception as e:
+        print(f"Error showing error message: {e}")
 
 def main():
     """Main program loop"""
-    print("Starting weather display...")
-    battery_voltage = magtag.peripherals.battery
-
+    print("MagTag Image Display Starting...")
+    
     # Connect to WiFi
     if not connect_wifi():
-        draw_error_overlay("WiFi Failed")
+        show_error_message("WiFi connection failed")
+        time.sleep(5)
     else:
-        # Get and display weather data
-        weather_data = get_weather_data(battery_voltage)
+        # Download and display the weather image
+        if not download_and_display_image():
+            show_error_message("Failed to load weather image")
+            time.sleep(5)
         
-        if weather_data:
-            try:
-                display_group = create_weather_display(weather_data)
-                if display_group:
-                    # Success! Only now do we clear and update the screen
-                    while len(magtag.splash) > 0:
-                        magtag.splash.pop()
-                    magtag.splash.append(display_group)
-                    magtag.refresh()
-                    print("Display updated successfully")
-            except Exception as error:
-                print(f"Display creation error: {error}")
-                draw_error_overlay(f"Display Error:\n{error}")
-        else:
-            draw_error_overlay("Fetch Failed")
-
         # Disconnect WiFi to save power
         wifi.radio.enabled = False
 
-    print("Entering deep sleep for 3 hours...")
-
+    print("Going to deep sleep...")
+    
     # Deep sleep for 3 hours
     time_alarm = alarm.time.TimeAlarm(monotonic_time=time.monotonic() + 3 * 60 * 60)
     alarm.exit_and_deep_sleep_until_alarms(time_alarm)
-
 
 # Run the main program
 if __name__ == "__main__":
