@@ -21,13 +21,25 @@ function getWeatherData($lat, $lon) {
 }
 
 function getBatteryLevel($voltage) {
-    if ($voltage >= 4.15) return 100;
-    if ($voltage >= 4.05) return 90;
-    if ($voltage >= 3.95) return 80;
-    if ($voltage >= 3.80) return 60;
-    if ($voltage >= 3.7) return 40;
-    if ($voltage >= 3.5) return 25;
-    if ($voltage >= 3.3) return 10;
+    // Piecewise linear approximation based on discharge data
+    $points = [
+        [4.1, 100], [4.0, 90], [3.8, 75], [3.7, 60],
+        [3.6, 40], [3.5, 20], [3.4, 10], [3.3, 5], [3.2, 0]
+    ];
+    
+    if ($voltage >= $points[0][0]) return 100;
+    if ($voltage <= $points[count($points)-1][0]) return 0;
+    
+    for ($i = 0; $i < count($points) - 1; $i++) {
+        $v1 = $points[$i][0];
+        $p1 = $points[$i][1];
+        $v2 = $points[$i+1][0];
+        $p2 = $points[$i+1][1];
+        
+        if ($v1 >= $voltage && $voltage >= $v2) {
+            return $p2 + ($p1 - $p2) * ($voltage - $v2) / ($v1 - $v2);
+        }
+    }
     return 0;
 }
 
@@ -425,9 +437,43 @@ function drawBattery($batteryVoltage, $image){
     $height = imagesy($image);
     $width = imagesx($image);
     $black = imagecolorallocate($image, 0, 0, 0);
+    $white = imagecolorallocate($image, 255, 255, 255);
     $gray = imagecolorallocate($image, 128, 128, 128);
     
     $batteryPercent = getBatteryLevel($batteryVoltage);
+
+    // Large Battery Warning Overlay (< 3.3V)
+    if ($batteryVoltage < 3.3) {
+        $orientation = $width > $height ? 'landscape' : 'portrait';
+        $iconFile = __DIR__ . "/icons/battery_alert_0deg.png";
+        
+        if (file_exists($iconFile)) {
+            if ($orientation === 'portrait') {
+                // Pin to bottom, scale to width
+                $targetW = $width;
+                $targetH = (int)($targetW * 0.5); // Assume 2:1 aspect ratio for battery icon
+                $overlay = loadAndResizeIcon($iconFile, $targetW, $targetH);
+                if ($overlay) {
+                    imagecopy($image, $overlay, 0, $height - $targetH, 0, 0, $targetW, $targetH);
+                    imagedestroy($overlay);
+                }
+            } else {
+                // Pin to left, scale to height
+                $targetH = $height;
+                $targetW = (int)($targetH * 2.0); // Assume 2:1 aspect ratio
+                $overlay = loadAndResizeIcon($iconFile, $targetW, $targetH);
+                if ($overlay) {
+                    imagecopy($image, $overlay, 0, 0, 0, 0, $targetW, $targetH);
+                    imagedestroy($overlay);
+                }
+            }
+        }
+        
+        // Add text warning
+        $warningText = sprintf("LOW BATTERY: %.2fV", $batteryVoltage);
+        drawCenteredText($image, $warningText, $width / 2, $height / 2, $black, 14, true);
+    }
+
     $batteryX = 2;
     $batteryY = $height - 9;
     $batteryWidth = 16;
@@ -445,7 +491,7 @@ function drawBattery($batteryVoltage, $image){
     imagefilledrectangle($image, $batteryX + $batteryWidth, $batteryY + 2,
                         $batteryX + $batteryWidth + 1, $batteryY + $batteryHeight - 2, $black);
 
-    imagestring($image, 1, $batteryX + 20, $batteryY, sprintf("%.1fV", $batteryVoltage), $gray);
+    imagestring($image, 1, $batteryX + 20, $batteryY, sprintf("%.2fV", $batteryVoltage), $gray);
 }
 
 function drawUpdated($updated, $timezoneOffset, $image){

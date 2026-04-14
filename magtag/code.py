@@ -133,27 +133,16 @@ def get_battery_icon_name(voltage):
         if has_vbus and vbus_pin.value:
             value = "charging_full"
         else:
-            # Custom thresholds based on typical Li-ion discharge curve
-            # 3.30V = empty, 4.20V = full
-
-            if voltage >= 4.15:
-                value = "full"  # ~95–100%
-            elif voltage >= 4.05:
-                value = "6_bar"  # ~85–95%
-            elif voltage >= 3.95:
-                value = "5_bar"  # ~70–85%
-            elif voltage >= 3.87:
-                value = "4_bar"  # ~55–70%
-            elif voltage >= 3.82:
-                value = "3_bar"  # ~40–55%
-            elif voltage >= 3.77:
-                value = "2_bar"  # ~25–40%
-            elif voltage >= 3.70:
-                value = "1_bar"  # ~10–25%
-            elif voltage >= 3.50:
-                value = "0_bar"  # ~5–10%, very low but not dead
-            else:
-                value = "alert"  # <3.5 V: effectively empty, may brownout
+            # Piecewise mapping from README
+            if voltage >= 4.1: value = "full"
+            elif voltage >= 4.0: value = "6_bar"
+            elif voltage >= 3.8: value = "5_bar"
+            elif voltage >= 3.7: value = "4_bar"
+            elif voltage >= 3.6: value = "3_bar"
+            elif voltage >= 3.5: value = "2_bar"
+            elif voltage >= 3.4: value = "1_bar"
+            elif voltage >= 3.3: value = "0_bar"
+            else: value = "alert"
 
     except Exception as e:
         print(f"Error determining battery icon: {e}")
@@ -173,21 +162,25 @@ def connect_wifi():
         return False
 
 
-def get_weather_data():
-    """Fetch weather data from yr.no"""
+def get_weather_data(battery_voltage):
+    """Fetch weather data from PHP server or yr.no"""
     try:
         pool = socketpool.SocketPool(wifi.radio)
         requests = adafruit_requests.Session(pool, ssl.create_default_context())
 
         lat = secrets.get("latitude", 47.6062)
         lon = secrets.get("longitude", -122.3321)
+        
+        # PHP Server URL (if configured)
+        php_server = secrets.get("php_server")
+        if php_server:
+            url = f"{php_server}?lat={lat}&lon={lon}&battery={battery_voltage:.2f}"
+            print(f"Fetching from PHP server: {url}")
+        else:
+            url = f"{YR_API_URL}?lat={lat}&lon={lon}"
+            print(f"Fetching weather for {lat}, {lon}...")
 
-        # Build URL with query parameters manually
-        url = f"{YR_API_URL}?lat={lat}&lon={lon}"
         headers = {"User-Agent": USER_AGENT}
-
-        print(f"Fetching weather for {lat}, {lon}...")
-        print(f"URL: {url}")
         response = requests.get(url, headers=headers)
         data = response.json()
         print(f"Response Headers: {response.headers}")
@@ -272,21 +265,49 @@ def wind_direction_text(degrees):
     return directions[idx]
 
 
+def draw_error_overlay(message):
+    """Draw a non-destructive error overlay in the center of the screen"""
+    print(f"Displaying error overlay: {message}")
+    error_group = displayio.Group()
+    
+    # Dimensions
+    w, h = 240, 60
+    x, y = (DISPLAY_WIDTH - w) // 2, (DISPLAY_HEIGHT - h) // 2
+    
+    # Black background box
+    bg_bitmap = displayio.Bitmap(w, h, 1)
+    bg_palette = displayio.Palette(1)
+    bg_palette[0] = BLACK
+    bg_sprite = displayio.TileGrid(bg_bitmap, pixel_shader=bg_palette, x=x, y=y)
+    error_group.append(bg_sprite)
+    
+    # White text
+    error_label = label.Label(
+        terminalio.FONT,
+        text=message,
+        color=WHITE,
+        x=x + 10,
+        y=y + h // 2
+    )
+    error_group.append(error_label)
+    
+    magtag.splash.append(error_group)
+    magtag.refresh()
+
 def create_weather_display(weather_data):
-    """Create the weather display layout"""
-    # Clear existing display
-    for _ in range(len(magtag.splash)):
-        magtag.splash.pop()
+    """Create the weather display layout as a Group"""
+    # Create main group instead of using magtag.splash directly
+    display_group = displayio.Group()
 
     # Add white background
     color_bitmap = displayio.Bitmap(DISPLAY_WIDTH, DISPLAY_HEIGHT, 1)
     color_palette = displayio.Palette(1)
     color_palette[0] = WHITE
     bg_sprite = displayio.TileGrid(color_bitmap, pixel_shader=color_palette)
-    magtag.splash.append(bg_sprite)
+    display_group.append(bg_sprite)
 
     if not weather_data:
-        # Error display
+        # Error display (this shouldn't be reached if we handle it in main)
         error_label = label.Label(
             terminalio.FONT,
             text="Weather data\nunavailable",
@@ -294,8 +315,8 @@ def create_weather_display(weather_data):
             x=DISPLAY_WIDTH // 2 - 60,
             y=DISPLAY_HEIGHT // 2
         )
-        magtag.splash.append(error_label)
-        return
+        display_group.append(error_label)
+        return display_group
 
     # Get first timeseries entry
     timeseries = weather_data["properties"]["timeseries"]
@@ -405,7 +426,7 @@ def create_weather_display(weather_data):
     battery_icon_name = get_battery_icon_name(battery_voltage)
     try:
         battery_icon_file = f"icons/{battery_icon_name}"
-        print(f"Loading battery icon: {battery_icon_file} (voltage: {battery_voltage:.1f}V)")
+        print(f"Loading battery icon: {battery_icon_file} (voltage: {battery_voltage:.2f}V)")
         battery_bitmap = displayio.OnDiskBitmap(battery_icon_file)
         battery_sprite = displayio.TileGrid(
             battery_bitmap,
@@ -418,7 +439,7 @@ def create_weather_display(weather_data):
     except Exception as battery_error:
         print(f"Could not load battery icon: {battery_error}")
 
-    voltage_text = f"{battery_voltage:.1f}V"
+    voltage_text = f"{battery_voltage:.2f}V"
     voltage_label = label.Label(
         terminalio.FONT,
         text=voltage_text,
@@ -517,42 +538,36 @@ def create_weather_display(weather_data):
         )
         main_group.append(histogram_sprite)
 
-    magtag.splash.append(main_group)
-
+    display_group.append(main_group)
+    return display_group
 
 def main():
     """Main program loop"""
     print("Starting weather display...")
+    battery_voltage = magtag.peripherals.battery
 
     # Connect to WiFi
     if not connect_wifi():
-        # Show error and sleep
-        error_label = label.Label(
-            terminalio.FONT,
-            text="WiFi connection failed",
-            color=BLACK,
-            x=50,
-            y=DISPLAY_HEIGHT // 2
-        )
-        magtag.splash.append(error_label)
-        magtag.refresh()
-        time.sleep(5)
+        draw_error_overlay("WiFi Failed")
     else:
         # Get and display weather data
-        weather_data = get_weather_data()
-        try:
-            create_weather_display(weather_data)
-        except Exception as error:
-            print(f"Display creation error: {error}")
-            error_label = label.Label(
-                terminalio.FONT,
-                text=f"Display error:\n{error}",
-                color=BLACK,
-                x=4,
-                y=4
-            )
-            magtag.splash.append(error_label)
-        magtag.refresh()
+        weather_data = get_weather_data(battery_voltage)
+        
+        if weather_data:
+            try:
+                display_group = create_weather_display(weather_data)
+                if display_group:
+                    # Success! Only now do we clear and update the screen
+                    while len(magtag.splash) > 0:
+                        magtag.splash.pop()
+                    magtag.splash.append(display_group)
+                    magtag.refresh()
+                    print("Display updated successfully")
+            except Exception as error:
+                print(f"Display creation error: {error}")
+                draw_error_overlay(f"Display Error:\n{error}")
+        else:
+            draw_error_overlay("Fetch Failed")
 
         # Disconnect WiFi to save power
         wifi.radio.enabled = False
