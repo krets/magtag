@@ -127,6 +127,7 @@ def update_battery_tracking(current_voltage):
 def download_and_display_image():
     """Download BMP image from PHP endpoint and display it"""
     try:
+        from adafruit_display_text import label
         # Get location and battery info
         lat = secrets.get("latitude", 52.5)
         lon = secrets.get("longitude", 13.45)
@@ -154,9 +155,9 @@ def download_and_display_image():
         orientation = get_orientation()
         print(f"Detected orientation: {orientation}")
 
-        # Build URL for PHP endpoint
+        # Build URL for PHP endpoint (using %.2f for precision)
         php_url = secrets.get("php_endpoint", "https://krets.com/magtag/")
-        url = f"{php_url}?lat={lat}&lon={lon}&battery={battery_voltage:.1f}&timezone={timezone_offset:+d}&orientation={orientation}"
+        url = f"{php_url}?lat={lat}&lon={lon}&battery={battery_voltage:.2f}&timezone={timezone_offset:+d}&orientation={orientation}"
 
         print(f"Downloading image from: {url}")
 
@@ -173,9 +174,6 @@ def download_and_display_image():
 
         print("Image downloaded successfully")
 
-        # Get the display
-        display = board.DISPLAY
-
         # Get the BMP data
         bmp_data = response.content
         response.close()
@@ -187,14 +185,8 @@ def download_and_display_image():
         group = displayio.Group()
         group.append(tile_grid)
 
-        display.root_group = group
-        display.refresh()
-
         # Add battery tracking overlay if tracking is active
-        hours_since_drop = update_battery_tracking(battery_voltage)
         if hours_since_drop is not None:
-            from adafruit_display_text import label
-
             # Create battery tracking text
             battery_text = f"(since {hours_since_drop}h)"
 
@@ -211,11 +203,11 @@ def download_and_display_image():
                 y=text_y
             )
             group.append(battery_label)
-
-            # Refresh display with battery tracking text
-            display.root_group = group
-            display.refresh()
             print(f"Added battery tracking text: {battery_text}")
+
+        # Atomic display update: Only set root and refresh once everything is ready
+        board.DISPLAY.root_group = group
+        board.DISPLAY.refresh()
 
         print("Image displayed successfully")
         return True
@@ -223,35 +215,45 @@ def download_and_display_image():
     except Exception as e:
         print(f"Error downloading/displaying image: {e}")
         return False
+
 def show_error_message(message):
-    """Display an error message on the screen"""
+    """Display an error message as a non-destructive overlay on the current screen"""
     try:
-        # Get the display
+        from adafruit_display_text import label
         display = board.DISPLAY
         
-        # Create a simple text display
-        splash = displayio.Group()
+        # Create overlay group
+        overlay = displayio.Group()
         
-        # White background
-        color_bitmap = displayio.Bitmap(DISPLAY_WIDTH, DISPLAY_HEIGHT, 1)
-        color_palette = displayio.Palette(1)
-        color_palette[0] = 0xFFFFFF  # White
-        bg_sprite = displayio.TileGrid(color_bitmap, pixel_shader=color_palette)
-        splash.append(bg_sprite)
+        # Dimensions for a central box
+        w, h = 240, 60
+        x, y = (DISPLAY_WIDTH - w) // 2, (DISPLAY_HEIGHT - h) // 2
         
-        # Error text
-        from adafruit_display_text import label
+        # Black background box
+        bg_bitmap = displayio.Bitmap(w, h, 1)
+        bg_palette = displayio.Palette(1)
+        bg_palette[0] = 0x000000 # Black
+        bg_sprite = displayio.TileGrid(bg_bitmap, pixel_shader=bg_palette, x=x, y=y)
+        overlay.append(bg_sprite)
+        
+        # White text
         error_label = label.Label(
             terminalio.FONT,
             text=message,
-            color=0x000000,  # Black
-            x=10,
-            y=DISPLAY_HEIGHT // 2
+            color=0xFFFFFF, # White
+            x=x + 10,
+            y=y + h // 2
         )
-        splash.append(error_label)
+        overlay.append(error_label)
         
-        display.root_group = splash
+        # Append to current root if possible, otherwise replace it
+        if isinstance(display.root_group, displayio.Group):
+            display.root_group.append(overlay)
+        else:
+            display.root_group = overlay
+            
         display.refresh()
+        print(f"Error overlay shown: {message}")
         
     except Exception as e:
         print(f"Error showing error message: {e}")
