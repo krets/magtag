@@ -23,8 +23,9 @@ function getWeatherData($lat, $lon) {
 function getBatteryLevel($voltage) {
     // Piecewise linear approximation based on discharge data
     $points = [
-        [4.1, 100], [4.0, 90], [3.8, 75], [3.7, 60],
-        [3.6, 40], [3.5, 20], [3.4, 10], [3.3, 5], [3.2, 0]
+        [4.1, 100], [4.0, 99], [3.9, 95], [3.8, 90],
+        [3.7, 81],  [3.6, 51], [3.5, 27], [3.4, 11],
+        [3.3, 7],   [3.2, 5],  [3.1, 4],  [3.0, 0]
     ];
     
     if ($voltage >= $points[0][0]) return 100;
@@ -41,6 +42,13 @@ function getBatteryLevel($voltage) {
         }
     }
     return 0;
+}
+
+function estimateDaysRemaining($batteryVoltage) {
+    // Total measured cycle runtime in hours (~576h = 24 days)
+    $totalHours = 576.0;
+    $pct = getBatteryLevel($batteryVoltage);
+    return ($pct / 100.0) * $totalHours / 24.0;
 }
 
 function formatTime($isoTime, $offset = 0) {
@@ -442,38 +450,6 @@ function drawBattery($batteryVoltage, $image){
     
     $batteryPercent = getBatteryLevel($batteryVoltage);
 
-    // Large Battery Warning Overlay (< 3.3V)
-    if ($batteryVoltage < 3.3) {
-        $orientation = $width > $height ? 'landscape' : 'portrait';
-        $iconFile = __DIR__ . "/icons/battery_alert_0deg.png";
-        
-        if (file_exists($iconFile)) {
-            if ($orientation === 'portrait') {
-                // Pin to bottom, scale to width
-                $targetW = $width;
-                $targetH = (int)($targetW * 0.5); // Assume 2:1 aspect ratio for battery icon
-                $overlay = loadAndResizeIcon($iconFile, $targetW, $targetH);
-                if ($overlay) {
-                    imagecopy($image, $overlay, 0, $height - $targetH, 0, 0, $targetW, $targetH);
-                    imagedestroy($overlay);
-                }
-            } else {
-                // Pin to left, scale to height
-                $targetH = $height;
-                $targetW = (int)($targetH * 2.0); // Assume 2:1 aspect ratio
-                $overlay = loadAndResizeIcon($iconFile, $targetW, $targetH);
-                if ($overlay) {
-                    imagecopy($image, $overlay, 0, 0, 0, 0, $targetW, $targetH);
-                    imagedestroy($overlay);
-                }
-            }
-        }
-        
-        // Add text warning
-        $warningText = sprintf("LOW BATTERY: %.2fV", $batteryVoltage);
-        drawCenteredText($image, $warningText, $width / 2, $height / 2, $black, 14, true);
-    }
-
     $batteryX = 2;
     $batteryY = $height - 9;
     $batteryWidth = 16;
@@ -503,6 +479,48 @@ function drawUpdated($updated, $timezoneOffset, $image){
     $timeText = "updated: ".$time;
     $textWidth = strlen($timeText) * 5;
     imagestring($image, 1, $width - $textWidth - 2, $height - 10, $timeText, $gray);
+}
+
+function drawBatteryInfoRow($image, $batteryVoltage, $y, $rowHeight, $black, $gray, $width, $timezoneOffset) {
+    $batteryPercent = getBatteryLevel($batteryVoltage);
+    $daysLeft = estimateDaysRemaining($batteryVoltage);
+    
+    // Draw separator line at top
+    imageline($image, 5, $y, $width - 5, $y, $gray);
+    
+    // Battery icon: use exclamation style if < 3.3V (critical)
+    $isCritical = ($batteryVoltage < 3.3);
+    $iconFile = $isCritical 
+        ? __DIR__ . '/../magtag/icons/battery_alert_90deg.bmp'
+        : __DIR__ . '/../magtag/icons/battery_0_bar_90deg.bmp';
+    
+    $iconY = $y + ($rowHeight / 2) - 8; // center 16px icon vertically
+    
+    if (file_exists($iconFile)) {
+        // Load BMP icon
+        $icon = imagecreatefrombmp($iconFile);
+        if ($icon) {
+            imagecopy($image, $icon, 5, (int)$iconY, 0, 0, 16, 16);
+            imagedestroy($icon);
+        }
+    } else {
+        // Fallback: draw a tiny battery rectangle
+        imagerectangle($image, 5, (int)$iconY + 3, 19, (int)$iconY + 12, $black);
+    }
+    
+    // Voltage and percent text
+    $voltText = sprintf('%.2fV', $batteryVoltage);
+    drawText($image, $voltText, 25, $y + 4, $black, 12, true);
+    drawText($image, sprintf('%d%%', round($batteryPercent)), 25, $y + 20, $gray, 11);
+    
+    // Days remaining
+    if ($daysLeft >= 1.0) {
+        $daysText = sprintf('~%.0fd left', $daysLeft);
+    } else {
+        $hoursLeft = $daysLeft * 24;
+        $daysText = sprintf('~%.0fh left', $hoursLeft);
+    }
+    drawCenteredText($image, $daysText, $width / 2, $y + 10, $isCritical ? $black : $gray, 12, $isCritical);
 }
 
 function createForecastDisplay($weatherData, $batteryVoltage = 3.8, $timezoneOffset = 0) {
@@ -595,6 +613,12 @@ function createForecastDisplay($weatherData, $batteryVoltage = 3.8, $timezoneOff
         if ($index === 0) continue; 
         
         $y = $startY + (($index - 1) * $rowHeight);
+
+        // Replace last row with battery info when battery is getting low
+        if ($index === 4 && $batteryVoltage <= 3.6) {
+            drawBatteryInfoRow($image, $batteryVoltage, $y, $rowHeight, $black, $gray, $width, $timezoneOffset);
+            break;
+        }
 
         // Future days: Day name (left), Icon (center), right-aligned high/low (right)
         drawText($image, $forecast['dayname'], 5, $y + 5, $black, 12);
@@ -754,6 +778,35 @@ function createWeatherDisplay($weatherData, $batteryVoltage = 3.8, $timezoneOffs
 
     drawBattery($batteryVoltage, $image);
     drawUpdated($updated, $timezoneOffset, $image);
+
+    // Battery info in left column when low
+    if ($batteryVoltage <= 3.6) {
+        $batteryPercent = getBatteryLevel($batteryVoltage);
+        $daysLeft = estimateDaysRemaining($batteryVoltage);
+        $isCritical = ($batteryVoltage < 3.3);
+        
+        // Draw battery icon (16x16) replacing the moon icon area
+        $iconFile = $isCritical
+            ? __DIR__ . '/../magtag/icons/battery_alert_90deg.bmp'
+            : __DIR__ . '/../magtag/icons/battery_0_bar_90deg.bmp';
+        
+        if (file_exists($iconFile)) {
+            $icon = imagecreatefrombmp($iconFile);
+            if ($icon) {
+                imagecopy($image, $icon, $leftEdge, 112, 0, 0, 16, 16);
+                imagedestroy($icon);
+            }
+        }
+        
+        // Battery text below the icon
+        if ($daysLeft >= 1.0) {
+            $battText = sprintf('~%.0fd', $daysLeft);
+        } else {
+            $battText = sprintf('~%.0fh', $daysLeft * 24);
+        }
+        imagestring($image, 1, $leftEdge + 20, 112, sprintf('%.2fV %s', $batteryVoltage, $battText), $isCritical ? $black : $gray);
+    }
+
     return $image;
 }
 
