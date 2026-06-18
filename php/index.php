@@ -481,46 +481,68 @@ function drawUpdated($updated, $timezoneOffset, $image){
     imagestring($image, 1, $width - $textWidth - 2, $height - 10, $timeText, $gray);
 }
 
+// Draw a battery icon using GD primitives.
+// $x,$y = top-left corner, $w/$h = outer dimensions.
+// $pct = fill 0-100. $critical = show '!' instead of fill bar.
+function drawBatteryGD($image, $x, $y, $w, $h, $pct, $critical, $black, $gray) {
+    // Terminal nub on right: 2px wide, centered vertically
+    $nubW = max(2, (int)($w * 0.06));
+    $nubH = (int)($h * 0.45);
+    $nubX = $x + $w;
+    $nubY = $y + (int)(($h - $nubH) / 2);
+    imagefilledrectangle($image, $nubX, $nubY, $nubX + $nubW, $nubY + $nubH, $black);
+
+    // Outer shell
+    imagerectangle($image, $x, $y, $x + $w - 1, $y + $h - 1, $black);
+
+    $innerW = $w - 2;
+    $innerH = $h - 2;
+
+    if ($critical) {
+        // Draw '!' inside
+        $dotX = $x + (int)($w / 2);
+        $dotY = $y + (int)($h * 0.65);
+        imagesetpixel($image, $dotX, $dotY, $black);
+        imageline($image, $dotX, $y + 2, $dotX, $dotY - 2, $black);
+    } else {
+        // Fill bar
+        $fillW = (int)(($pct / 100.0) * $innerW);
+        if ($fillW > 0) {
+            imagefilledrectangle($image, $x + 1, $y + 1,
+                $x + $fillW, $y + $h - 2,
+                $pct <= 15 ? $gray : $black);
+        }
+    }
+}
+
 function drawBatteryInfoRow($image, $batteryVoltage, $y, $rowHeight, $black, $gray, $width, $timezoneOffset) {
     $batteryPercent = getBatteryLevel($batteryVoltage);
     $daysLeft = estimateDaysRemaining($batteryVoltage);
-    
+    $isCritical = ($batteryVoltage < 3.3);
+
     // Draw separator line at top
     imageline($image, 5, $y, $width - 5, $y, $gray);
-    
-    // Battery icon: use exclamation style if < 3.3V (critical)
-    $isCritical = ($batteryVoltage < 3.3);
-    $iconFile = $isCritical 
-        ? __DIR__ . '/../magtag/icons/battery_alert_90deg.bmp'
-        : __DIR__ . '/../magtag/icons/battery_0_bar_90deg.bmp';
-    
-    $iconY = $y + ($rowHeight / 2) - 8; // center 16px icon vertically
-    
-    if (file_exists($iconFile)) {
-        // Load BMP icon
-        $icon = imagecreatefrombmp($iconFile);
-        if ($icon) {
-            imagecopy($image, $icon, 5, (int)$iconY, 0, 0, 16, 16);
-            imagedestroy($icon);
-        }
-    } else {
-        // Fallback: draw a tiny battery rectangle
-        imagerectangle($image, 5, (int)$iconY + 3, 19, (int)$iconY + 12, $black);
-    }
-    
-    // Voltage and percent text
-    $voltText = sprintf('%.2fV', $batteryVoltage);
-    drawText($image, $voltText, 25, $y + 4, $black, 12, true);
-    drawText($image, sprintf('%d%%', round($batteryPercent)), 25, $y + 20, $gray, 11);
-    
-    // Days remaining
+
+    // Battery icon: tall enough to see, left-aligned
+    $iconW = 32;
+    $iconH = (int)($rowHeight * 0.55);
+    $iconX = 5;
+    $iconY = $y + (int)(($rowHeight - $iconH) / 2);
+    drawBatteryGD($image, $iconX, $iconY, $iconW, $iconH, $batteryPercent, $isCritical, $black, $gray);
+
+    // Text column to right of icon
+    $textX = $iconX + $iconW + 6;
+
+    // Line 1: voltage bold
+    drawText($image, sprintf('%.2fV', $batteryVoltage), $textX, $y + 5, $black, 12, true);
+
+    // Line 2: percent + days, same baseline, smaller
     if ($daysLeft >= 1.0) {
-        $daysText = sprintf('~%.0fd left', $daysLeft);
+        $daysText = sprintf('%d%% ~%.0fd left', round($batteryPercent), $daysLeft);
     } else {
-        $hoursLeft = $daysLeft * 24;
-        $daysText = sprintf('~%.0fh left', $hoursLeft);
+        $daysText = sprintf('%d%% ~%.0fh left', round($batteryPercent), $daysLeft * 24);
     }
-    drawCenteredText($image, $daysText, $width / 2, $y + 10, $isCritical ? $black : $gray, 12, $isCritical);
+    drawText($image, $daysText, $textX, $y + 22, $isCritical ? $black : $gray, 10, $isCritical);
 }
 
 function createForecastDisplay($weatherData, $batteryVoltage = 3.8, $timezoneOffset = 0) {
@@ -737,30 +759,33 @@ function createWeatherDisplay($weatherData, $batteryVoltage = 3.8, $timezoneOffs
     drawDateWithOrdinal($image, $dateInfo['day'], substr($dateInfo['dayWithOrdinal'], strlen($dateInfo['day'])), $leftEdge, 5, $black);
     imagestring($image, 3, $leftEdge, 50, $dateInfo['month'] . ', ' . $dateInfo['dayname'], $black);
 
-    $humidityIcon = loadAndResizeIcon('icons/wi-humidity.png', 16, 16);
-    if ($humidityIcon) {
-        imagecopy($image, $humidityIcon, $leftEdge, 77, 0, 0, 16, 16);
-        imagestring($image, 3, $leftEdge + 20, 79, $humidity . '%', $gray);
-        imagedestroy($humidityIcon);
-    } else {
-        imagestring($image, 3, $leftEdge, 77, $humidity . '%', $gray);
-    }
+    if ($batteryVoltage > 3.6) {
+        // Normal: show humidity, wind, moon in left column
+        $humidityIcon = loadAndResizeIcon('icons/wi-humidity.png', 16, 16);
+        if ($humidityIcon) {
+            imagecopy($image, $humidityIcon, $leftEdge, 77, 0, 0, 16, 16);
+            imagestring($image, 3, $leftEdge + 20, 79, $humidity . '%', $gray);
+            imagedestroy($humidityIcon);
+        } else {
+            imagestring($image, 3, $leftEdge, 77, $humidity . '%', $gray);
+        }
 
-    $windIconPath = "icons/wind_direction_meteorological_{$windDirection}deg.png";
-    $windIcon = loadAndResizeIcon($windIconPath, 12, 12);
-    if ($windIcon) {
-        imagecopy($image, $windIcon, $leftEdge, 92, 0, 0, 12, 12);
-        imagestring($image, 3, $leftEdge + 15, 92, sprintf('%.1fm/s', $wind), $gray);
-        imagedestroy($windIcon);
-    } else {
-        imagestring($image, 3, $leftEdge, 92, sprintf('%.1fm/s', $wind), $gray);
-    }
+        $windIconPath = "icons/wind_direction_meteorological_{$windDirection}deg.png";
+        $windIcon = loadAndResizeIcon($windIconPath, 12, 12);
+        if ($windIcon) {
+            imagecopy($image, $windIcon, $leftEdge, 92, 0, 0, 12, 12);
+            imagestring($image, 3, $leftEdge + 15, 92, sprintf('%.1fm/s', $wind), $gray);
+            imagedestroy($windIcon);
+        } else {
+            imagestring($image, 3, $leftEdge, 92, sprintf('%.1fm/s', $wind), $gray);
+        }
 
-    if ($moonPhase) {
-        $moonIcon = loadAndResizeIcon("icons/{$moonPhase}", 16, 16);
-        if ($moonIcon) {
-            imagecopy($image, $moonIcon, $leftEdge, 112, 0, 0, 16, 16);
-            imagedestroy($moonIcon);
+        if ($moonPhase) {
+            $moonIcon = loadAndResizeIcon("icons/{$moonPhase}", 16, 16);
+            if ($moonIcon) {
+                imagecopy($image, $moonIcon, $leftEdge, 112, 0, 0, 16, 16);
+                imagedestroy($moonIcon);
+            }
         }
     }
 
@@ -779,32 +804,29 @@ function createWeatherDisplay($weatherData, $batteryVoltage = 3.8, $timezoneOffs
     drawBattery($batteryVoltage, $image);
     drawUpdated($updated, $timezoneOffset, $image);
 
-    // Battery info in left column when low
+    // Battery info: replace the left-column info (humidity/wind/moon) when battery is low
     if ($batteryVoltage <= 3.6) {
         $batteryPercent = getBatteryLevel($batteryVoltage);
         $daysLeft = estimateDaysRemaining($batteryVoltage);
         $isCritical = ($batteryVoltage < 3.3);
-        
-        // Draw battery icon (16x16) replacing the moon icon area
-        $iconFile = $isCritical
-            ? __DIR__ . '/../magtag/icons/battery_alert_90deg.bmp'
-            : __DIR__ . '/../magtag/icons/battery_0_bar_90deg.bmp';
-        
-        if (file_exists($iconFile)) {
-            $icon = imagecreatefrombmp($iconFile);
-            if ($icon) {
-                imagecopy($image, $icon, $leftEdge, 112, 0, 0, 16, 16);
-                imagedestroy($icon);
-            }
-        }
-        
-        // Battery text below the icon
+
+        // Battery icon: wide, filling left column (y=73 down, 52px wide, 22px tall)
+        $iconW = 52;
+        $iconH = 22;
+        $iconX = $leftEdge;
+        $iconY = 73;
+        drawBatteryGD($image, $iconX, $iconY, $iconW, $iconH, $batteryPercent, $isCritical, $black, $gray);
+
+        // Voltage text under icon
+        drawText($image, sprintf('%.2fV', $batteryVoltage), $leftEdge, 99, $black, 11, true);
+
+        // Days/hours remaining
         if ($daysLeft >= 1.0) {
-            $battText = sprintf('~%.0fd', $daysLeft);
+            $remText = sprintf('~%.0f days', $daysLeft);
         } else {
-            $battText = sprintf('~%.0fh', $daysLeft * 24);
+            $remText = sprintf('~%.0f hrs', $daysLeft * 24);
         }
-        imagestring($image, 1, $leftEdge + 20, 112, sprintf('%.2fV %s', $batteryVoltage, $battText), $isCritical ? $black : $gray);
+        drawText($image, $remText, $leftEdge, 113, $isCritical ? $black : $gray, 10, $isCritical);
     }
 
     return $image;
