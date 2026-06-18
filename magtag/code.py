@@ -25,11 +25,6 @@ except ImportError:
 DISPLAY_WIDTH = 296
 DISPLAY_HEIGHT = 128
 
-# Battery tracking variables (reset on each boot since filesystem is read-only)
-BATTERY_THRESHOLD = 4.1
-battery_drop_time = None
-last_battery_voltage = 4.2
-
 def connect_wifi():
     """Connect to WiFi network"""
     try:
@@ -95,35 +90,6 @@ def get_orientation():
         print(f"Could not read orientation: {e}")
         return "landscape_left"  # Default orientation
 
-def update_battery_tracking(current_voltage):
-    """Update battery tracking and return hours since drop below threshold"""
-    global battery_drop_time, last_battery_voltage
-    
-    current_time = time.monotonic()
-    
-    # Check if voltage dropped below threshold for the first time
-    if (battery_drop_time is None and 
-        current_voltage < BATTERY_THRESHOLD and 
-        last_battery_voltage >= BATTERY_THRESHOLD):
-        
-        battery_drop_time = current_time
-        print(f"Battery dropped below {BATTERY_THRESHOLD}V at {current_time}")
-    
-    # Reset tracking if voltage goes back above threshold
-    elif current_voltage >= BATTERY_THRESHOLD and battery_drop_time is not None:
-        battery_drop_time = None
-        print(f"Battery recovered above {BATTERY_THRESHOLD}V, resetting tracking")
-    
-    last_battery_voltage = current_voltage
-    
-    # Calculate hours since drop
-    if battery_drop_time is not None:
-        hours_elapsed = (current_time - battery_drop_time) / 3600
-        return int(hours_elapsed)
-    
-    return None
-
-
 def download_and_display_image():
     """Download BMP image from PHP endpoint and display it"""
     try:
@@ -143,13 +109,6 @@ def download_and_display_image():
             battery_pin.deinit()
         except Exception as e:
             print(f"Could not read battery voltage: {e}")
-
-        # Update battery tracking
-        hours_since_drop = update_battery_tracking(battery_voltage)
-        if hours_since_drop is not None:
-            print(f"Battery tracking: {hours_since_drop}h since drop below {BATTERY_THRESHOLD}V")
-        else:
-            print("Battery tracking: no drop detected")
 
         # Get orientation
         orientation = get_orientation()
@@ -184,26 +143,6 @@ def download_and_display_image():
         tile_grid = displayio.TileGrid(bitmap, pixel_shader=palette)
         group = displayio.Group()
         group.append(tile_grid)
-
-        # Add battery tracking overlay if tracking is active
-        if hours_since_drop is not None:
-            # Create battery tracking text
-            battery_text = f"(since {hours_since_drop}h)"
-
-            # Position text at bottom center
-            text_width = len(battery_text) * 6  # Approximate width for small font
-            text_x = (bitmap.width - text_width) // 2
-            text_y = bitmap.height - 15
-
-            battery_label = label.Label(
-                terminalio.FONT,
-                text=battery_text,
-                color=0x000000,  # Black
-                x=text_x,
-                y=text_y
-            )
-            group.append(battery_label)
-            print(f"Added battery tracking text: {battery_text}")
 
         # Atomic display update: Only set root and refresh once everything is ready
         board.DISPLAY.root_group = group
