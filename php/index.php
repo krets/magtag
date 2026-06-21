@@ -21,22 +21,26 @@ function getWeatherData($lat, $lon) {
 }
 
 function getBatteryLevel($voltage) {
-    // Piecewise linear approximation based on discharge data
+    // Piecewise linear approximation.
+    // High end (3.35V–4.20V): from floating-point Apr-May 2026 log (668h, ended at 3.29V).
+    // Low end (2.90V–3.30V): from older full-discharge logs — 12h at 3.2V, 6h at 3.1V,
+    //   6h below 3.1V before dead. Total runtime extended to ~692h.
     $points = [
-        [4.1, 100], [4.0, 99], [3.9, 95], [3.8, 90],
-        [3.7, 81],  [3.6, 51], [3.5, 27], [3.4, 11],
-        [3.3, 7],   [3.2, 5],  [3.1, 4],  [3.0, 0]
+        [4.20, 100],  [3.90, 99.5], [3.80, 88],
+        [3.70, 75],   [3.60, 57],   [3.50, 31],
+        [3.40, 11],   [3.35, 6.0],
+        [3.30, 3.5],  [3.20, 2.6],  [3.10, 1.7],  [3.00, 0.9],  [2.90, 0]
     ];
-    
+
     if ($voltage >= $points[0][0]) return 100;
     if ($voltage <= $points[count($points)-1][0]) return 0;
-    
+
     for ($i = 0; $i < count($points) - 1; $i++) {
         $v1 = $points[$i][0];
         $p1 = $points[$i][1];
         $v2 = $points[$i+1][0];
         $p2 = $points[$i+1][1];
-        
+
         if ($v1 >= $voltage && $voltage >= $v2) {
             return $p2 + ($p1 - $p2) * ($voltage - $v2) / ($v1 - $v2);
         }
@@ -45,8 +49,8 @@ function getBatteryLevel($voltage) {
 }
 
 function estimateDaysRemaining($batteryVoltage) {
-    // Total measured cycle runtime in hours (~576h = 24 days)
-    $totalHours = 576.0;
+    // 692h = 668h observed (Apr-May log) + ~24h tail below 3.29V from older full-discharge data
+    $totalHours = 692.0;
     $pct = getBatteryLevel($batteryVoltage);
     return ($pct / 100.0) * $totalHours / 24.0;
 }
@@ -481,68 +485,47 @@ function drawUpdated($updated, $timezoneOffset, $image){
     imagestring($image, 1, $width - $textWidth - 2, $height - 10, $timeText, $gray);
 }
 
-// Draw a battery icon using GD primitives.
-// $x,$y = top-left corner, $w/$h = outer dimensions.
-// $pct = fill 0-100. $critical = show '!' instead of fill bar.
-function drawBatteryGD($image, $x, $y, $w, $h, $pct, $critical, $black, $gray) {
-    // Terminal nub on right: 2px wide, centered vertically
-    $nubW = max(2, (int)($w * 0.06));
-    $nubH = (int)($h * 0.45);
-    $nubX = $x + $w;
-    $nubY = $y + (int)(($h - $nubH) / 2);
-    imagefilledrectangle($image, $nubX, $nubY, $nubX + $nubW, $nubY + $nubH, $black);
-
-    // Outer shell
-    imagerectangle($image, $x, $y, $x + $w - 1, $y + $h - 1, $black);
-
-    $innerW = $w - 2;
-    $innerH = $h - 2;
-
-    if ($critical) {
-        // Draw '!' inside
-        $dotX = $x + (int)($w / 2);
-        $dotY = $y + (int)($h * 0.65);
-        imagesetpixel($image, $dotX, $dotY, $black);
-        imageline($image, $dotX, $y + 2, $dotX, $dotY - 2, $black);
-    } else {
-        // Fill bar
-        $fillW = (int)(($pct / 100.0) * $innerW);
-        if ($fillW > 0) {
-            imagefilledrectangle($image, $x + 1, $y + 1,
-                $x + $fillW, $y + $h - 2,
-                $pct <= 15 ? $gray : $black);
-        }
-    }
+// Return the battery icon filename (without path) for a given percentage.
+// orientation: '0deg' for landscape (no PHP rotation), '90deg' for portrait.
+function getBatteryIconName($pct, $critical, $orientation = '0deg') {
+    if ($critical) return "battery_alert_{$orientation}.png";
+    // 0-6 bars: battery_0_bar through battery_6_bar
+    $bars = (int)round($pct / 100.0 * 6);
+    $bars = max(0, min(6, $bars));
+    return "battery_{$bars}_bar_{$orientation}.png";
 }
+
 
 function drawBatteryInfoRow($image, $batteryVoltage, $y, $rowHeight, $black, $gray, $width, $timezoneOffset) {
     $batteryPercent = getBatteryLevel($batteryVoltage);
     $daysLeft = estimateDaysRemaining($batteryVoltage);
     $isCritical = ($batteryVoltage < 3.3);
 
-    // Draw separator line at top
     imageline($image, 5, $y, $width - 5, $y, $gray);
 
-    // Battery icon: tall enough to see, left-aligned
-    $iconW = 32;
-    $iconH = (int)($rowHeight * 0.55);
+    // Square icon filling most of the row height, bottom-anchored
+    $iconH = min((int)($rowHeight * 0.95), $rowHeight - 4);
+    $iconW = $iconH;
     $iconX = 5;
-    $iconY = $y + (int)(($rowHeight - $iconH) / 2);
-    drawBatteryGD($image, $iconX, $iconY, $iconW, $iconH, $batteryPercent, $isCritical, $black, $gray);
+    $iconY = $y + $rowHeight - $iconH - 2;
 
-    // Text column to right of icon
-    $textX = $iconX + $iconW + 6;
-
-    // Line 1: voltage bold
-    drawText($image, sprintf('%.2fV', $batteryVoltage), $textX, $y + 5, $black, 12, true);
-
-    // Line 2: percent + days, same baseline, smaller
-    if ($daysLeft >= 1.0) {
-        $daysText = sprintf('%d%% ~%.0fd left', round($batteryPercent), $daysLeft);
-    } else {
-        $daysText = sprintf('%d%% ~%.0fh left', round($batteryPercent), $daysLeft * 24);
+    // Use the 90deg PNG (correct orientation after PHP portrait rotation)
+    $iconFile = __DIR__ . '/icons/' . getBatteryIconName($batteryPercent, $isCritical, '90deg');
+    $icon = loadAndResizeIcon($iconFile, $iconW, $iconH);
+    if ($icon) {
+        imagecopy($image, $icon, $iconX, $iconY, 0, 0, $iconW, $iconH);
+        imagedestroy($icon);
     }
-    drawText($image, $daysText, $textX, $y + 22, $isCritical ? $black : $gray, 10, $isCritical);
+
+    // Terse days/hours text, centered in the space to the right of the icon
+    if ($daysLeft >= 1.0) {
+        $daysText = sprintf('~%dd', round($daysLeft));
+    } else {
+        $daysText = sprintf('~%dh', round($daysLeft * 24));
+    }
+    $textCenterX = (int)(($iconX + $iconW + 6 + $width) / 2);
+    $textY = $y + (int)(($rowHeight - 14) / 2);
+    drawCenteredText($image, $daysText, $textCenterX, $textY, $isCritical ? $black : $gray, 14, $isCritical);
 }
 
 function createForecastDisplay($weatherData, $batteryVoltage = 3.8, $timezoneOffset = 0) {
@@ -756,6 +739,24 @@ function createWeatherDisplay($weatherData, $batteryVoltage = 3.8, $timezoneOffs
     }
 
     $leftEdge = 5;
+
+    // Draw battery icon first so the date text renders on top of it.
+    // Icon sits at y=63–119 (56px, bottom flush with the status bar zone).
+    if ($batteryVoltage <= 3.6) {
+        $batteryPercent = getBatteryLevel($batteryVoltage);
+        $isCritical = ($batteryVoltage < 3.3);
+        $iconH = 56;
+        $iconW = 56;
+        $iconX = $leftEdge;
+        $iconY = 63; // bottom at y=119
+        $iconFile = __DIR__ . '/icons/' . getBatteryIconName($batteryPercent, $isCritical, '90deg');
+        $icon = loadAndResizeIcon($iconFile, $iconW, $iconH);
+        if ($icon) {
+            imagecopy($image, $icon, $iconX, $iconY, 0, 0, $iconW, $iconH);
+            imagedestroy($icon);
+        }
+    }
+
     drawDateWithOrdinal($image, $dateInfo['day'], substr($dateInfo['dayWithOrdinal'], strlen($dateInfo['day'])), $leftEdge, 5, $black);
     imagestring($image, 3, $leftEdge, 50, $dateInfo['month'] . ', ' . $dateInfo['dayname'], $black);
 
@@ -804,29 +805,17 @@ function createWeatherDisplay($weatherData, $batteryVoltage = 3.8, $timezoneOffs
     drawBattery($batteryVoltage, $image);
     drawUpdated($updated, $timezoneOffset, $image);
 
-    // Battery info: replace the left-column info (humidity/wind/moon) when battery is low
+    // Days-remaining text: absolute bottom centre, drawn last so it sits on top.
     if ($batteryVoltage <= 3.6) {
-        $batteryPercent = getBatteryLevel($batteryVoltage);
         $daysLeft = estimateDaysRemaining($batteryVoltage);
         $isCritical = ($batteryVoltage < 3.3);
-
-        // Battery icon: wide, filling left column (y=73 down, 52px wide, 22px tall)
-        $iconW = 52;
-        $iconH = 22;
-        $iconX = $leftEdge;
-        $iconY = 73;
-        drawBatteryGD($image, $iconX, $iconY, $iconW, $iconH, $batteryPercent, $isCritical, $black, $gray);
-
-        // Voltage text under icon
-        drawText($image, sprintf('%.2fV', $batteryVoltage), $leftEdge, 99, $black, 11, true);
-
-        // Days/hours remaining
         if ($daysLeft >= 1.0) {
-            $remText = sprintf('~%.0f days', $daysLeft);
+            $remText = sprintf('~%dd', round($daysLeft));
         } else {
-            $remText = sprintf('~%.0f hrs', $daysLeft * 24);
+            $remText = sprintf('~%dh', round($daysLeft * 24));
         }
-        drawText($image, $remText, $leftEdge, 113, $isCritical ? $black : $gray, 10, $isCritical);
+        // Centre of display width=296, just above the border at y≈107
+        drawCenteredText($image, $remText, (int)(DISPLAY_WIDTH / 2), 107, $isCritical ? $black : $gray, 12, $isCritical);
     }
 
     return $image;
