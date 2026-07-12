@@ -528,7 +528,7 @@ function drawBatteryInfoRow($image, $batteryVoltage, $y, $rowHeight, $black, $gr
     drawCenteredText($image, $daysText, $textCenterX, $textY, $isCritical ? $black : $gray, 14, $isCritical);
 }
 
-function createForecastDisplay($weatherData, $batteryVoltage = 3.8, $timezoneOffset = 0) {
+function createForecastDisplay($weatherData, $batteryVoltage = 3.8, $timezoneOffset = 0, $warningThreshold = 3.4) {
     $width = DISPLAY_HEIGHT;  
     $height = DISPLAY_WIDTH;  
 
@@ -620,7 +620,7 @@ function createForecastDisplay($weatherData, $batteryVoltage = 3.8, $timezoneOff
         $y = $startY + (($index - 1) * $rowHeight);
 
         // Replace last row with battery info when battery is getting low
-        if ($index === 4 && $batteryVoltage <= 3.6) {
+        if ($index === 4 && $batteryVoltage <= $warningThreshold) {
             drawBatteryInfoRow($image, $batteryVoltage, $y, $rowHeight, $black, $gray, $width, $timezoneOffset);
             break;
         }
@@ -656,7 +656,7 @@ function createForecastDisplay($weatherData, $batteryVoltage = 3.8, $timezoneOff
     return $image;
 }
 
-function createWeatherDisplay($weatherData, $batteryVoltage = 3.8, $timezoneOffset = 0, $orientation = 'landscape_left') {
+function createWeatherDisplay($weatherData, $batteryVoltage = 3.8, $timezoneOffset = 0, $orientation = 'landscape_left', $warningThreshold = 3.4) {
     if (in_array($orientation, ['portrait_up', 'portrait_down', 'portrait_left'])) {
         $width = DISPLAY_HEIGHT;  
         $height = DISPLAY_WIDTH;  
@@ -742,7 +742,7 @@ function createWeatherDisplay($weatherData, $batteryVoltage = 3.8, $timezoneOffs
 
     // Draw battery icon first so the date text renders on top of it.
     // Icon sits at y=63–119 (56px, bottom flush with the status bar zone).
-    if ($batteryVoltage <= 3.6) {
+    if ($batteryVoltage <= $warningThreshold) {
         $batteryPercent = getBatteryLevel($batteryVoltage);
         $isCritical = ($batteryVoltage < 3.3);
         $iconH = 56;
@@ -760,7 +760,7 @@ function createWeatherDisplay($weatherData, $batteryVoltage = 3.8, $timezoneOffs
     drawDateWithOrdinal($image, $dateInfo['day'], substr($dateInfo['dayWithOrdinal'], strlen($dateInfo['day'])), $leftEdge, 5, $black);
     imagestring($image, 3, $leftEdge, 50, $dateInfo['month'] . ', ' . $dateInfo['dayname'], $black);
 
-    if ($batteryVoltage > 3.6) {
+    if ($batteryVoltage > $warningThreshold) {
         // Normal: show humidity, wind, moon in left column
         $humidityIcon = loadAndResizeIcon('icons/wi-humidity.png', 16, 16);
         if ($humidityIcon) {
@@ -806,7 +806,7 @@ function createWeatherDisplay($weatherData, $batteryVoltage = 3.8, $timezoneOffs
     drawUpdated($updated, $timezoneOffset, $image);
 
     // Days-remaining text: absolute bottom centre, drawn last so it sits on top.
-    if ($batteryVoltage <= 3.6) {
+    if ($batteryVoltage <= $warningThreshold) {
         $daysLeft = estimateDaysRemaining($batteryVoltage);
         $isCritical = ($batteryVoltage < 3.3);
         if ($daysLeft >= 1.0) {
@@ -826,13 +826,14 @@ $lon = $_GET['lon'] ?? 13.45;
 $batteryVoltage = (float)($_GET['battery'] ?? 3.8);
 $timezoneOffset = (int)($_GET['timezone'] ?? 0);
 $orientation = $_GET['orientation'] ?? 'landscape_left';
+$warningThreshold = (float)($_GET['warning_threshold'] ?? 3.40);
 
 $weatherData = getWeatherData($lat, $lon);
 
 if (in_array($orientation, ['portrait_up', 'portrait_down', 'portrait_left'])) {
-    $image = createForecastDisplay($weatherData, $batteryVoltage, $timezoneOffset);
+    $image = createForecastDisplay($weatherData, $batteryVoltage, $timezoneOffset, $warningThreshold);
 } else {
-    $image = createWeatherDisplay($weatherData, $batteryVoltage, $timezoneOffset, $orientation);
+    $image = createWeatherDisplay($weatherData, $batteryVoltage, $timezoneOffset, $orientation, $warningThreshold);
 }
 
 $finalWidth = imagesx($image);
