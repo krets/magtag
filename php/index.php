@@ -21,15 +21,20 @@ function getWeatherData($lat, $lon) {
 }
 
 function getBatteryLevel($voltage) {
-    // Piecewise linear approximation.
-    // High end (3.35V–4.20V): from floating-point Apr-May 2026 log (668h, ended at 3.29V).
-    // Low end (2.90V–3.30V): from older full-discharge logs — 12h at 3.2V, 6h at 3.1V,
-    //   6h below 3.1V before dead. Total runtime extended to ~692h.
+    // Piecewise linear approximation, from a single continuous discharge log:
+    // full charge 2026-07-13 09:36 (4.13V) to last successful report 2026-08-20
+    // 02:23 (2.89V, 904.8h later) — no further device requests logged afterward
+    // despite continued server traffic, so 2.89V is treated as effectively dead.
+    // Supersedes the prior 692h estimate, which understated runtime and
+    // overstated remaining charge through the 3.5V-3.95V midrange by ~10-19 points.
     $points = [
-        [4.20, 100],  [3.90, 99.5], [3.80, 88],
-        [3.70, 75],   [3.60, 57],   [3.50, 31],
-        [3.40, 11],   [3.35, 6.0],
-        [3.30, 3.5],  [3.20, 2.6],  [3.10, 1.7],  [3.00, 0.9],  [2.90, 0]
+        [4.20, 100.0], [4.10, 99.7], [4.00, 92.8],
+        [3.95, 86.4],  [3.90, 80.9], [3.85, 74.9],
+        [3.80, 70.5],  [3.75, 65.6], [3.70, 58.4],
+        [3.65, 51.5],  [3.60, 42.6], [3.55, 33.9],
+        [3.50, 23.6],  [3.45, 16.6], [3.40, 7.5],
+        [3.35, 4.8],   [3.30, 3.6],  [3.20, 1.6],
+        [3.10, 0.9],   [3.00, 0.4],  [2.90, 0.0]
     ];
 
     if ($voltage >= $points[0][0]) return 100;
@@ -49,8 +54,8 @@ function getBatteryLevel($voltage) {
 }
 
 function estimateDaysRemaining($batteryVoltage) {
-    // 692h = 668h observed (Apr-May log) + ~24h tail below 3.29V from older full-discharge data
-    $totalHours = 692.0;
+    // 904.8h observed full-charge-to-dead runtime, see getBatteryLevel().
+    $totalHours = 904.8;
     $pct = getBatteryLevel($batteryVoltage);
     return ($pct / 100.0) * $totalHours / 24.0;
 }
