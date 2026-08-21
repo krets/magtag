@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MagTag Weather Preview</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            background-color: #f0f0f0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 40px;
+        }
+        .grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 100px; /* Increased gap to handle rotation layout shift */
+            justify-content: center;
+            align-items: center;
+        }
+        .magtag-frame {
+            background: white;
+            padding: 6px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .label {
+            margin-bottom: 8px;
+            font-size: 11px;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        img {
+            image-rendering: pixelated;
+            display: block;
+            border: 1px solid black;
+        }
+        /* Rotate the sideways Portrait Down image back to vertical for evaluation */
+        .rotated-portrait {
+            transform: rotate(90deg);
+            margin: 84px -84px; /* (296-128)/2 = 84px shift compensation */
+        }
+    </style>
+</head>
+<body>
+    <div class="grid">
+        <!-- Landscape Left -->
+        <div class="magtag-frame">
+            <div class="label">Landscape Left</div>
+            <img src="index.php?lat=52.50285624755197&lon=13.4516406682802&battery=3.8&timezone=2&orientation=landscape_left" alt="Landscape">
+        </div>
+        <!-- Landscape Left -->
+        <div class="magtag-frame">
+            <div class="label">Landscape Left</div>
+            <img src="index.php?lat=52.50285624755197&lon=13.4516406682802&battery=3.2&timezone=2&orientation=landscape_left" alt="Landscape">
+        </div>
+
+        <!-- Portrait Down -->
+        <div class="magtag-frame">
+            <div class="label">Portrait Down</div>
+            <img class="rotated-portrait" src="index.php?lat=52.50285624755197&lon=13.4516406682802&battery=3.8&timezone=2&orientation=portrait_down" alt="Portrait Down">
+        </div>
+        <!-- Portrait Down -->
+        <div class="magtag-frame">
+            <div class="label">Portrait Down</div>
+            <img class="rotated-portrait" src="index.php?lat=52.50285624755197&lon=13.4516406682802&battery=3.2&timezone=2&orientation=portrait_down" alt="Portrait Down">
+        </div>
+ 
+    </div>
+</body>
+</html>
